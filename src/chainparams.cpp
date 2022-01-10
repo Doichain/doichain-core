@@ -81,9 +81,9 @@ public:
         consensus.BIP65Height = 130000;
         consensus.BIP66Height = 130000;
         /* Doichain activates CSV/Segwit with BIP16.  */
-        consensus.CSVHeight = 216500;
-        consensus.SegwitHeight = 216500;
-        consensus.MinBIP9WarningHeight = 218500; // segwit activation height + miner confirmation window
+        consensus.CSVHeight = 475000;
+        consensus.SegwitHeight = 206000;
+        consensus.MinBIP9WarningHeight = 208000; // segwit activation height + miner confirmation window
         consensus.powLimit = uint256S("0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
         consensus.nPowTargetSpacing = 10 * 60;
@@ -251,22 +251,22 @@ public:
         consensus.signet_blocks = false;
         consensus.signet_challenge.clear();
         consensus.nSubsidyHalvingInterval = 210000;
-        consensus.BIP16Height = 1000;
+        consensus.BIP16Height = 10000000;
         /* As before, these are not the actual activation heights but some
            blocks after them.  */
         consensus.BIP34Height = 130000;
         consensus.BIP34Hash = uint256S("0xe0a05455d89a54bb7c1b5bb785d6b1b7c5bda42ed4ce8dc19d68652ba8835954");
-        consensus.BIP65Height = 1000;
-        consensus.BIP66Height = 1000;
+        consensus.BIP65Height = 130000;
+        consensus.BIP66Height = 130000;
         /* Doichain activates CSV/Segwit with BIP16.  */
-        consensus.CSVHeight = 1000;
-        consensus.SegwitHeight = 1000;
-        consensus.MinBIP9WarningHeight = 1000; // segwit activation height + miner confirmation window
+        consensus.CSVHeight = 232000;
+        consensus.SegwitHeight = 232000;
+        consensus.MinBIP9WarningHeight = 234016; // segwit activation height + miner confirmation window
         consensus.powLimit = uint256S("000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
         consensus.nPowTargetSpacing = 10 * 60;
-        consensus.fPowAllowMinDifficultyBlocks = false;
-        consensus.nMinDifficultySince = 4500; // 15 Mar 2014
+        consensus.fPowAllowMinDifficultyBlocks = true;
+        consensus.nMinDifficultySince = 0; // 15 Mar 2014
         consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 1512; // 75% for testchains
         consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
