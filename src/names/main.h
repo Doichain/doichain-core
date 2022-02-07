@@ -1,11 +1,11 @@
-// Copyright (c) 2014-2020 Daniel Kraft
+// Copyright (c) 2014-2021 Daniel Kraft
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef H_BITCOIN_NAMES_MAIN
 #define H_BITCOIN_NAMES_MAIN
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <names/common.h>
 #include <primitives/transaction.h>
 #include <serialize.h>
@@ -15,7 +15,7 @@
 class CBlockUndo;
 class CCoinsView;
 class CCoinsViewCache;
-class ChainstateManager;
+class CChainState;
 class CTxMemPool;
 class TxValidationState;
 
@@ -105,7 +105,7 @@ void ApplyNameTransaction (const CTransaction& tx, unsigned nHeight,
 /**
  * Expire all names at the given height.  This removes their coins
  * from the UTXO set.
- * @param height The new block height.
+ * @param nHeight The new block height.
  * @param view The coins view to update.
  * @param undo The block undo object to record undo information.
  * @param names List all expired names here.
@@ -132,6 +132,6 @@ bool UnexpireNames (unsigned nHeight, CBlockUndo& undo,
  * this throws an assertion failure.
  * @param disconnect Whether we are disconnecting blocks.
  */
-void CheckNameDB (ChainstateManager& chainman, bool disconnect);
+void CheckNameDB (CChainState& chainState, bool disconnect);
 
 #endif // H_BITCOIN_NAMES_MAIN

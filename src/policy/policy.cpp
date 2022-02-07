@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2019 The Bitcoin Core developers
+// Copyright (c) 2009-2020 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,7 +9,7 @@
 
 #include <consensus/validation.h>
 #include <coins.h>
-
+#include <span.h>
 
 CAmount GetDustThreshold(const CTxOut& txout, const CFeeRate& dustRelayFeeIn)
 {
@@ -21,12 +21,12 @@ CAmount GetDustThreshold(const CTxOut& txout, const CFeeRate& dustRelayFeeIn)
     // need a CTxIn of at least 148 bytes to spend:
     // so dust is a spendable txout less than
     // 182*dustRelayFee/1000 (in satoshis).
-    // 546 satoshis at the default rate of 3000 sat/kB.
-    // A typical spendable segwit txout is 31 bytes big, and will
+    // 546 satoshis at the default rate of 3000 sat/kvB.
+    // A typical spendable segwit P2WPKH txout is 31 bytes big, and will
     // need a CTxIn of at least 67 bytes to spend:
     // so dust is a spendable txout less than
     // 98*dustRelayFee/1000 (in satoshis).
-    // 294 satoshis at the default rate of 3000 sat/kB.
+    // 294 satoshis at the default rate of 3000 sat/kvB.
     if (txout.scriptPubKey.IsUnspendable())
         return 0;
 
@@ -34,6 +34,11 @@ CAmount GetDustThreshold(const CTxOut& txout, const CFeeRate& dustRelayFeeIn)
     int witnessversion = 0;
     std::vector<unsigned char> witnessprogram;
 
+    // Note this computation is for spending a Segwit v0 P2WPKH output (a 33 bytes
+    // public key + an ECDSA signature). For Segwit v1 Taproot outputs the minimum
+    // satisfaction is lower (a single BIP340 signature) but this computation was
+    // kept to not further reduce the dust level.
+    // See discussion in https://github.com/bitcoin/bitcoin/pull/22779 for details.
     if (txout.scriptPubKey.IsWitnessProgram(true, witnessversion, witnessprogram)) {
         // sum the sizes of the parts of a transaction input
         // with 75% segwit discount applied to the script size.
@@ -94,14 +99,15 @@ bool IsStandardTx(const CTransaction& tx, bool permit_bare_multisig, const CFeeR
 
     for (const CTxIn& txin : tx.vin)
     {
-        // Biggest 'standard' txin is a 15-of-15 P2SH multisig with compressed
-        // keys (remember the 520 byte limit on redeemScript size). That works
-        // out to a (15*(33+1))+3=513 byte redeemScript, 513+1+15*(73+1)+3=1627
-        // bytes of scriptSig, which we round off to 1650 bytes for some minor
-        // future-proofing. That's also enough to spend a 20-of-20
-        // CHECKMULTISIG scriptPubKey, though such a scriptPubKey is not
-        // considered standard.
-        if (txin.scriptSig.size() > 1650) {
+        // Biggest 'standard' txin involving only keys is a 15-of-15 P2SH
+        // multisig with compressed keys (remember the 520 byte limit on
+        // redeemScript size). That works out to a (15*(33+1))+3=513 byte
+        // redeemScript, 513+1+15*(73+1)+3=1627 bytes of scriptSig, which
+        // we round off to 1650(MAX_STANDARD_SCRIPTSIG_SIZE) bytes for
+        // some minor future-proofing. That's also enough to spend a
+        // 20-of-20 CHECKMULTISIG scriptPubKey, though such a scriptPubKey
+        // is not considered standard.
+        if (txin.scriptSig.size() > MAX_STANDARD_SCRIPTSIG_SIZE) {
             reason = "scriptsig-size";
             return false;
         }
@@ -159,11 +165,11 @@ bool IsStandardTx(const CTransaction& tx, bool permit_bare_multisig, const CFeeR
  */
 bool AreInputsStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
 {
-    if (tx.IsCoinBase())
+    if (tx.IsCoinBase()) {
         return true; // Coinbases don't use vin normally
+    }
 
-    for (unsigned int i = 0; i < tx.vin.size(); i++)
-    {
+    for (unsigned int i = 0; i < tx.vin.size(); i++) {
         const CTxOut& prev = mapInputs.AccessCoin(tx.vin[i].prevout).out;
 
         std::vector<std::vector<unsigned char> > vSolutions;
@@ -208,6 +214,7 @@ bool IsWitnessStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
         // get the scriptPubKey corresponding to this input:
         CScript prevScript = prev.scriptPubKey;
 
+        bool p2sh = false;
         if (prevScript.IsPayToScriptHash(true)) {
             std::vector <std::vector<unsigned char> > stack;
             // If the scriptPubKey is P2SH, we try to extract the redeemScript casually by converting the scriptSig
@@ -218,6 +225,7 @@ bool IsWitnessStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
             if (stack.empty())
                 return false;
             prevScript = CScript(stack.back().begin(), stack.back().end());
+            p2sh = true;
         }
 
         int witnessversion = 0;
@@ -237,6 +245,36 @@ bool IsWitnessStandard(const CTransaction& tx, const CCoinsViewCache& mapInputs)
             for (unsigned int j = 0; j < sizeWitnessStack; j++) {
                 if (tx.vin[i].scriptWitness.stack[j].size() > MAX_STANDARD_P2WSH_STACK_ITEM_SIZE)
                     return false;
+            }
+        }
+
+        // Check policy limits for Taproot spends:
+        // - MAX_STANDARD_TAPSCRIPT_STACK_ITEM_SIZE limit for stack item size
+        // - No annexes
+        if (witnessversion == 1 && witnessprogram.size() == WITNESS_V1_TAPROOT_SIZE && !p2sh) {
+            // Taproot spend (non-P2SH-wrapped, version 1, witness program size 32; see BIP 341)
+            Span stack{tx.vin[i].scriptWitness.stack};
+            if (stack.size() >= 2 && !stack.back().empty() && stack.back()[0] == ANNEX_TAG) {
+                // Annexes are nonstandard as long as no semantics are defined for them.
+                return false;
+            }
+            if (stack.size() >= 2) {
+                // Script path spend (2 or more stack elements after removing optional annex)
+                const auto& control_block = SpanPopBack(stack);
+                SpanPopBack(stack); // Ignore script
+                if (control_block.empty()) return false; // Empty control block is invalid
+                if ((control_block[0] & TAPROOT_LEAF_MASK) == TAPROOT_LEAF_TAPSCRIPT) {
+                    // Leaf version 0xc0 (aka Tapscript, see BIP 342)
+                    for (const auto& item : stack) {
+                        if (item.size() > MAX_STANDARD_TAPSCRIPT_STACK_ITEM_SIZE) return false;
+                    }
+                }
+            } else if (stack.size() == 1) {
+                // Key path spend (1 stack element after removing optional annex)
+                // (no policy rules apply)
+            } else {
+                // 0 stack elements; this is already invalid by consensus rules
+                return false;
             }
         }
     }

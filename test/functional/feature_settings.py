@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2017-2020 The Bitcoin Core developers
+# Copyright (c) 2017-2021 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test various command line arguments and configuration file parameters."""
@@ -17,6 +17,7 @@ class SettingsTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
+        self.wallet_names = []
 
     def run_test(self):
         node, = self.nodes
@@ -30,19 +31,25 @@ class SettingsTest(BitcoinTestFramework):
 
         # Assert settings are parsed and logged
         with settings.open("w") as fp:
-            json.dump({"string": "string", "num": 5, "bool": True, "null": None, "list": [6,7]}, fp)
+            json.dump({"string": "string", "num": 5, "bool": True, "null": None, "list": [6, 7]}, fp)
         with node.assert_debug_log(expected_msgs=[
+                'Ignoring unknown rw_settings value bool',
+                'Ignoring unknown rw_settings value list',
+                'Ignoring unknown rw_settings value null',
+                'Ignoring unknown rw_settings value num',
+                'Ignoring unknown rw_settings value string',
                 'Setting file arg: string = "string"',
                 'Setting file arg: num = 5',
                 'Setting file arg: bool = true',
                 'Setting file arg: null = null',
-                'Setting file arg: list = [6,7]']):
+                'Setting file arg: list = [6,7]',
+        ]):
             self.start_node(0)
             self.stop_node(0)
 
         # Assert settings are unchanged after shutdown
         with settings.open() as fp:
-            assert_equal(json.load(fp), {"string": "string", "num": 5, "bool": True, "null": None, "list": [6,7]})
+            assert_equal(json.load(fp), {"string": "string", "num": 5, "bool": True, "null": None, "list": [6, 7]})
 
         # Test invalid json
         with settings.open("w") as fp:
@@ -76,7 +83,7 @@ class SettingsTest(BitcoinTestFramework):
         with altsettings.open("w") as fp:
             fp.write('{"key": "value"}')
         with node.assert_debug_log(expected_msgs=['Setting file arg: key = "value"']):
-            self.start_node(0, extra_args=["-settings={}".format(altsettings)])
+            self.start_node(0, extra_args=[f"-settings={altsettings}"])
             self.stop_node(0)
 
 

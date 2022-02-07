@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2020 Daniel Kraft
+// Copyright (c) 2014-2021 Daniel Kraft
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -202,7 +202,7 @@ CAuxpowBuilder::get (const CTransactionRef tx) const
   res.nChainIndex = auxpowChainIndex;
   res.parentBlock = parentBlock;
 
-  return res;
+  return std::move (res);
 }
 
 valtype
@@ -515,31 +515,45 @@ BOOST_FIXTURE_TEST_CASE (auxpow_pow, BasicTestingSetup)
 class AuxpowMinerForTest : public AuxpowMiner
 {
 
+private:
+
+  /** Node (with chainman and mempool) used for the test.  */
+  const NodeContext& node;
+
 public:
 
-  using AuxpowMiner::cs;
+  explicit AuxpowMinerForTest (const NodeContext& n)
+    : node(n)
+  {}
 
-  using AuxpowMiner::getCurrentBlock;
+  using AuxpowMiner::cs;
   using AuxpowMiner::lookupSavedBlock;
+
+  const CBlock*
+  getCurrentBlock (const CScript& scriptPubKey, uint256& target)
+  {
+    return AuxpowMiner::getCurrentBlock (*node.chainman, *node.mempool,
+                                         scriptPubKey, target);
+  }
 
 };
 
 BOOST_FIXTURE_TEST_CASE (auxpow_miner_blockRegeneration, TestChain100Setup)
 {
-  CTxMemPool mempool;
-  AuxpowMinerForTest miner;
+  AuxpowMinerForTest miner(m_node);
   LOCK (miner.cs);
 
   /* We use mocktime so that we can control GetTime() as it is used in the
      logic that determines whether or not to reconstruct a block.  The "base"
      time is set such that the blocks we have from the fixture are fresh.  */
-  const int64_t baseTime = ::ChainActive ().Tip ()->GetMedianTimePast () + 1;
+  const int64_t baseTime
+      = m_node.chainman->ActiveChain ().Tip ()->GetMedianTimePast () + 1;
   SetMockTime (baseTime);
 
   /* Construct a first block.  */
   CScript scriptPubKey;
   uint256 target;
-  const CBlock* pblock1 = miner.getCurrentBlock (mempool, scriptPubKey, target);
+  const CBlock* pblock1 = miner.getCurrentBlock (scriptPubKey, target);
   BOOST_CHECK (pblock1 != nullptr);
   const uint256 hash1 = pblock1->GetHash ();
 
@@ -552,14 +566,14 @@ BOOST_FIXTURE_TEST_CASE (auxpow_miner_blockRegeneration, TestChain100Setup)
      time (even if we advance the clock, since there are no new
      transactions).  */
   SetMockTime (baseTime + 100);
-  const CBlock* pblock = miner.getCurrentBlock (mempool, scriptPubKey, target);
+  const CBlock* pblock = miner.getCurrentBlock (scriptPubKey, target);
   BOOST_CHECK (pblock == pblock1 && pblock->GetHash () == hash1);
 
   /* Mine a block, then we should get a new auxpow block constructed.  Note that
      it can be the same *pointer* if the memory was reused after clearing it,
      so we can only verify that the hash is different.  */
   CreateAndProcessBlock ({}, scriptPubKey);
-  const CBlock* pblock2 = miner.getCurrentBlock (mempool, scriptPubKey, target);
+  const CBlock* pblock2 = miner.getCurrentBlock (scriptPubKey, target);
   BOOST_CHECK (pblock2 != nullptr);
   const uint256 hash2 = pblock2->GetHash ();
   BOOST_CHECK (hash2 != hash1);
@@ -569,32 +583,31 @@ BOOST_FIXTURE_TEST_CASE (auxpow_miner_blockRegeneration, TestChain100Setup)
   CMutableTransaction mtx;
   mtx.vout.emplace_back (1234, scriptPubKey);
   {
-    LOCK (mempool.cs);
-    mempool.addUnchecked (entry.FromTx (mtx));
+    LOCK2 (cs_main, m_node.mempool->cs);
+    m_node.mempool->addUnchecked (entry.FromTx (mtx));
   }
 
   /* We should still get back the cached block, for now.  */
   SetMockTime (baseTime + 160);
-  pblock = miner.getCurrentBlock (mempool, scriptPubKey, target);
+  pblock = miner.getCurrentBlock (scriptPubKey, target);
   BOOST_CHECK (pblock == pblock2 && pblock->GetHash () == hash2);
 
   /* With time advanced too far, we get a new block.  This time, we should also
      definitely get a different pointer, as there is no clearing.  The old
      blocks are freed only after a new tip is found.  */
   SetMockTime (baseTime + 161);
-  const CBlock* pblock3 = miner.getCurrentBlock (mempool, scriptPubKey, target);
+  const CBlock* pblock3 = miner.getCurrentBlock (scriptPubKey, target);
   BOOST_CHECK (pblock3 != pblock2 && pblock3->GetHash () != hash2);
 }
 
 BOOST_FIXTURE_TEST_CASE (auxpow_miner_createAndLookupBlock, TestChain100Setup)
 {
-  CTxMemPool mempool;
-  AuxpowMinerForTest miner;
+  AuxpowMinerForTest miner(m_node);
   LOCK (miner.cs);
 
   CScript scriptPubKey;
   uint256 target;
-  const CBlock* pblock = miner.getCurrentBlock (mempool, scriptPubKey, target);
+  const CBlock* pblock = miner.getCurrentBlock (scriptPubKey, target);
   BOOST_CHECK (pblock != nullptr);
 
   BOOST_CHECK (miner.lookupSavedBlock (pblock->GetHash ().GetHex ()) == pblock);

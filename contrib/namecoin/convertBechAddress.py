@@ -30,7 +30,7 @@ if len (sys.argv) >= 3:
 else:
   hrp = "nc"
 
-oldHrp, data = segwit_addr.bech32_decode (addr)
-print ("Old HRP: %s" % oldHrp)
-newAddr = segwit_addr.bech32_encode (hrp, data)
+enc, oldHrp, data = segwit_addr.bech32_decode (addr)
+print ("Encoding %s, old HRP: %s" % (enc, oldHrp))
+newAddr = segwit_addr.bech32_encode (enc, hrp, data)
 print (newAddr)

@@ -11,6 +11,7 @@
 #include <netaddress.h>
 #include <node/ui_interface.h>
 #include <sync.h>
+#include <tinyformat.h>
 #include <util/system.h>
 #include <util/translation.h>
 #include <warnings.h>
@@ -34,11 +35,6 @@ int64_t GetTimeOffset()
 int64_t GetAdjustedTime()
 {
     return GetTime() + GetTimeOffset();
-}
-
-static int64_t abs64(int64_t n)
-{
-    return (n >= 0 ? n : -n);
 }
 
 #define BITCOIN_TIMEDATA_MAX_SAMPLES 200
@@ -79,7 +75,8 @@ void AddTimeData(const CNetAddr& ip, int64_t nOffsetSample)
         int64_t nMedian = vTimeOffsets.median();
         std::vector<int64_t> vSorted = vTimeOffsets.sorted();
         // Only let other nodes change our time by so much
-        if (abs64(nMedian) <= std::max<int64_t>(0, gArgs.GetArg("-maxtimeadjustment", DEFAULT_MAX_TIME_ADJUSTMENT))) {
+        int64_t max_adjustment = std::max<int64_t>(0, gArgs.GetIntArg("-maxtimeadjustment", DEFAULT_MAX_TIME_ADJUSTMENT));
+        if (nMedian >= -max_adjustment && nMedian <= max_adjustment) {
             nTimeOffset = nMedian;
         } else {
             nTimeOffset = 0;
@@ -89,7 +86,7 @@ void AddTimeData(const CNetAddr& ip, int64_t nOffsetSample)
                 // If nobody has a time different than ours but within 5 minutes of ours, give a warning
                 bool fMatch = false;
                 for (const int64_t nOffset : vSorted) {
-                    if (nOffset != 0 && abs64(nOffset) < 5 * 60) fMatch = true;
+                    if (nOffset != 0 && nOffset > -5 * 60 && nOffset < 5 * 60) fMatch = true;
                 }
 
                 if (!fMatch) {
@@ -102,11 +99,12 @@ void AddTimeData(const CNetAddr& ip, int64_t nOffsetSample)
         }
 
         if (LogAcceptCategory(BCLog::NET)) {
+            std::string log_message{"time data samples: "};
             for (const int64_t n : vSorted) {
-                LogPrint(BCLog::NET, "%+d  ", n); /* Continued */
+                log_message += strprintf("%+d  ", n);
             }
-            LogPrint(BCLog::NET, "|  "); /* Continued */
-            LogPrint(BCLog::NET, "nTimeOffset = %+d  (%+d minutes)\n", nTimeOffset, nTimeOffset / 60);
+            log_message += strprintf("|  median offset = %+d  (%+d minutes)", nTimeOffset, nTimeOffset / 60);
+            LogPrint(BCLog::NET, "%s\n", log_message);
         }
     }
 }

@@ -1,7 +1,7 @@
 // Copyright 2014 BitPay Inc.
 // Copyright 2015 Bitcoin Core Developers
 // Distributed under the MIT software license, see the accompanying
-// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+// file COPYING or https://opensource.org/licenses/mit-license.php.
 
 #include <stdint.h>
 #include <iomanip>
@@ -179,17 +179,19 @@ bool UniValue::findKey(const std::string& key, size_t& retIdx) const
 
 bool UniValue::checkObject(const std::map<std::string,UniValue::VType>& t) const
 {
-    if (typ != VOBJ)
+    if (typ != VOBJ) {
         return false;
+    }
 
-    for (std::map<std::string,UniValue::VType>::const_iterator it = t.begin();
-         it != t.end(); ++it) {
+    for (const auto& object: t) {
         size_t idx = 0;
-        if (!findKey(it->first, idx))
+        if (!findKey(object.first, idx)) {
             return false;
+        }
 
-        if (values.at(idx).getType() != it->second)
+        if (values.at(idx).getType() != object.second) {
             return false;
+        }
     }
 
     return true;
@@ -229,7 +231,7 @@ const char *uvTypeName(UniValue::VType t)
     }
 
     // not reached
-    return NULL;
+    return nullptr;
 }
 
 const UniValue& find_value(const UniValue& obj, const std::string& name)
@@ -247,5 +249,10 @@ bool IsValidUtf8String(const std::string& str)
     JSONUTF8StringFilter writer(valStr);
     for (size_t i = 0; i < str.size (); ++i)
         writer.push_back(str[i]);
-    return writer.finalize();
+    /* The JSONUTF8StringFilter does not do full validation as per the
+       UTF-8 spec (RFC 3629), and also handles UTF-16 collation, which we
+       do not want to allow in validating pure UTF-8 strings.  Thus make sure
+       that the "filtered" (re-encoded) UTF-8 string equals the input, which
+       filters out those situations.  */
+    return writer.finalize() && valStr == str;
 }

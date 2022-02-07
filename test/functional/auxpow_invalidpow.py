@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2019 Daniel Kraft
+# Copyright (c) 2019-2021 Daniel Kraft
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -18,10 +18,7 @@ from test_framework.messages import (
   uint256_from_compact,
 )
 from test_framework.p2p import P2PDataStore
-from test_framework.util import (
-  assert_equal,
-  hex_str_to_bytes,
-)
+from test_framework.util import assert_equal
 
 from test_framework.auxpow_testing import computeAuxpow
 
@@ -37,19 +34,19 @@ class AuxpowInvalidPoWTest (BitcoinTestFramework):
 
   def run_test (self):
     node = self.nodes[0]
-    node.add_p2p_connection (P2PDataStore ())
+    peer = node.add_p2p_connection (P2PDataStore ())
 
     self.log.info ("Sending block with invalid auxpow over P2P...")
     tip = node.getbestblockhash ()
     blk, blkHash = self.createBlock ()
     blk = self.addAuxpow (blk, blkHash, False)
-    node.p2p.send_blocks_and_test ([blk], node, force_send=True,
-                                   success=False, reject_reason="high-hash")
+    peer.send_blocks_and_test ([blk], node, force_send=True,
+                               success=False, reject_reason="high-hash")
     assert_equal (node.getbestblockhash (), tip)
 
     self.log.info ("Sending the same block with valid auxpow...")
     blk = self.addAuxpow (blk, blkHash, True)
-    node.p2p.send_blocks_and_test ([blk], node, success=True)
+    peer.send_blocks_and_test ([blk], node, success=True)
     assert_equal (node.getbestblockhash (), blkHash)
 
     self.log.info ("Submitting block with invalid auxpow...")
@@ -93,7 +90,7 @@ class AuxpowInvalidPoWTest (BitcoinTestFramework):
     target = b"%064x" % uint256_from_compact (block.nBits)
     auxpowHex = computeAuxpow (blkHash, target, ok)
     block.auxpow = CAuxPow ()
-    block.auxpow.deserialize (BytesIO (hex_str_to_bytes (auxpowHex)))
+    block.auxpow.deserialize (BytesIO (bytes.fromhex (auxpowHex)))
 
     return block
 

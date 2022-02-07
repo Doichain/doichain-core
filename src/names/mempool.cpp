@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2020 Daniel Kraft
+// Copyright (c) 2014-2021 Daniel Kraft
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -304,18 +304,10 @@ CNameMemPool::removeExpireConflicts (const std::set<valtype>& expired)
 }
 
 void
-CNameMemPool::check (ChainstateManager& chainman, const CCoinsView& coins) const
+CNameMemPool::check (const CCoinsViewCache& tip,
+                     const int64_t spendheight) const
 {
   AssertLockHeld (pool.cs);
-
-  LogPrint (BCLog::NAMES, "check\n");
-
-  const uint256 blockHash = coins.GetBestBlock ();
-  int nHeight;
-  if (blockHash.IsNull())
-    nHeight = 0;
-  else
-    nHeight = chainman.BlockIndex ().find (blockHash)->second->nHeight;
 
   std::set<valtype> nameRegs;
   std::map<valtype, unsigned> nameDois;
@@ -343,12 +335,10 @@ CNameMemPool::check (ChainstateManager& chainman, const CCoinsView& coins) const
           assert (nameRegs.count (name) == 0);
           nameRegs.insert (name);
 
-          /* The old name should be expired already.  Note that we use
-             nHeight+1 for the check, because that's the height at which
-             the mempool tx will actually be mined.  */
+          /* The old name should be expired already.  */
           CNameData data;
-          if (coins.GetName (name, data))
-            assert (data.isExpired (nHeight + 1));
+          if (tip.GetName (name, data))
+            assert (data.isExpired (spendheight));
         }
 
       if (entry.isNameUpdate ())
@@ -361,10 +351,9 @@ CNameMemPool::check (ChainstateManager& chainman, const CCoinsView& coins) const
 
           ++nameUpdates[name];
 
-          /* As above, use nHeight+1 for the expiration check.  */
           CNameData data;
-          if (coins.GetName (name, data))
-            assert (!data.isExpired (nHeight + 1));
+          if (tip.GetName (name, data))
+            assert (!data.isExpired (spendheight));
           else
             assert (registersName (name));
         }

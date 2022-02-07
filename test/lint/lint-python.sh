@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright (c) 2017-2019 The Bitcoin Core developers
+# Copyright (c) 2017-2021 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #
@@ -55,6 +55,7 @@ enabled=(
     F621 # too many expressions in an assignment with star-unpacking
     F622 # two or more starred expressions in an assignment (a, *b, *c = d)
     F631 # assertion test is a tuple, which are always True
+    F632 # use ==/!= to compare str, bytes, and int literals
     F701 # a break statement outside of a while or for loop
     F702 # a continue statement outside of a while or for loop
     F703 # a continue statement in a finally block in a loop
@@ -91,6 +92,7 @@ fi
 
 EXIT_CODE=0
 
+# shellcheck disable=SC2046
 if ! PYTHONWARNINGS="ignore" flake8 --ignore=B,C,E,F,I,N,W --select=$(IFS=","; echo "${enabled[*]}") $(
     if [[ $# == 0 ]]; then
         git ls-files "*.py"
@@ -101,7 +103,8 @@ if ! PYTHONWARNINGS="ignore" flake8 --ignore=B,C,E,F,I,N,W --select=$(IFS=","; e
     EXIT_CODE=1
 fi
 
-if ! mypy --ignore-missing-imports $(git ls-files "test/functional/*.py"); then
+mapfile -t FILES < <(git ls-files "test/functional/*.py" "contrib/devtools/*.py")
+if ! mypy --show-error-codes "${FILES[@]}"; then
     EXIT_CODE=1
 fi
 

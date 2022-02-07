@@ -1,12 +1,12 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2019 The Bitcoin Core developers
+// Copyright (c) 2009-2020 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_CONSENSUS_PARAMS_H
 #define BITCOIN_CONSENSUS_PARAMS_H
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <uint256.h>
 #include <limits>
 
@@ -37,7 +37,7 @@ class MainNetConsensus : public ConsensusRules
 {
 public:
 
-    unsigned NameExpirationDepth(unsigned nHeight) const
+    unsigned NameExpirationDepth(unsigned nHeight) const override
     {
         /* Important:  It is assumed (in ExpireNames) that
            "n - expirationDepth(n)" is increasing!  (This is
@@ -51,7 +51,7 @@ public:
         return 36000;
     }
 
-    CAmount MinNameCoinAmount(unsigned nHeight) const
+    CAmount MinNameCoinAmount(unsigned nHeight) const override
     {
         if (nHeight < 212500)
             return 0;
@@ -65,7 +65,7 @@ class TestNetConsensus : public MainNetConsensus
 {
 public:
 
-    CAmount MinNameCoinAmount(unsigned) const
+    CAmount MinNameCoinAmount(unsigned) const override
     {
         return COIN / 100;
     }
@@ -76,19 +76,35 @@ class RegTestConsensus : public TestNetConsensus
 {
 public:
 
-    unsigned NameExpirationDepth (unsigned nHeight) const
+    unsigned NameExpirationDepth (unsigned nHeight) const override
     {
         return 30;
     }
 
 };
 
-enum DeploymentPos
-{
+/**
+ * A buried deployment is one where the height of the activation has been hardcoded into
+ * the client implementation long after the consensus change has activated. See BIP 90.
+ */
+enum BuriedDeployment : int16_t {
+    // buried deployments get negative values to avoid overlap with DeploymentPos
+    DEPLOYMENT_HEIGHTINCB = std::numeric_limits<int16_t>::min(),
+    DEPLOYMENT_P2SH,
+    DEPLOYMENT_CLTV,
+    DEPLOYMENT_DERSIG,
+    DEPLOYMENT_CSV,
+    DEPLOYMENT_SEGWIT,
+};
+constexpr bool ValidDeployment(BuriedDeployment dep) { return dep <= DEPLOYMENT_SEGWIT; }
+
+enum DeploymentPos : uint16_t {
     DEPLOYMENT_TESTDUMMY,
-    // NOTE: Also add new deployments to VersionBitsDeploymentInfo in versionbits.cpp
+    DEPLOYMENT_TAPROOT, // Deployment of Schnorr/Taproot (BIPs 340-342)
+    // NOTE: Also add new deployments to VersionBitsDeploymentInfo in deploymentinfo.cpp
     MAX_VERSION_BITS_DEPLOYMENTS
 };
+constexpr bool ValidDeployment(DeploymentPos dep) { return dep < MAX_VERSION_BITS_DEPLOYMENTS; }
 
 /**
  * Struct for each individual consensus rule change using BIP9.
@@ -100,6 +116,11 @@ struct BIP9Deployment {
     int64_t nStartTime;
     /** Timeout/expiry MedianTime for the deployment attempt. */
     int64_t nTimeout;
+    /** If lock in occurs, delay activation until at least this block
+     *  height.  Note that activation will only occur on a retarget
+     *  boundary.
+     */
+    int min_activation_height{0};
 
     /** Constant for nTimeout very far in the future. */
     static constexpr int64_t NO_TIMEOUT = std::numeric_limits<int64_t>::max();
@@ -109,6 +130,11 @@ struct BIP9Deployment {
      *  process (which takes at least 3 BIP9 intervals). Only tests that specifically test the
      *  behaviour during activation cannot use this. */
     static constexpr int64_t ALWAYS_ACTIVE = -1;
+
+    /** Special value for nStartTime indicating that the deployment is never active.
+     *  This is useful for integrating the code changes for a new feature
+     *  prior to deploying it on some or all networks. */
+    static constexpr int64_t NEVER_ACTIVE = -2;
 };
 
 /**
@@ -151,8 +177,36 @@ struct Params {
     int64_t nPowTargetSpacing;
     int64_t nPowTargetTimespan;
     int64_t DifficultyAdjustmentInterval() const { return nPowTargetTimespan / nPowTargetSpacing; }
+    /** The best chain should have at least this much work */
     uint256 nMinimumChainWork;
+    /** By default assume that the signatures in ancestors of this block are valid */
     uint256 defaultAssumeValid;
+
+    /**
+     * If true, witness commitments contain a payload equal to a Bitcoin Script solution
+     * to the signet challenge. See BIP325.
+     */
+    bool signet_blocks{false};
+    std::vector<uint8_t> signet_challenge;
+
+    int DeploymentHeight(BuriedDeployment dep) const
+    {
+        switch (dep) {
+        case DEPLOYMENT_P2SH:
+            return BIP16Height;
+        case DEPLOYMENT_HEIGHTINCB:
+            return BIP34Height;
+        case DEPLOYMENT_CLTV:
+            return BIP65Height;
+        case DEPLOYMENT_DERSIG:
+            return BIP66Height;
+        case DEPLOYMENT_CSV:
+            return CSVHeight;
+        case DEPLOYMENT_SEGWIT:
+            return SegwitHeight;
+        } // no default case, so the compiler can warn about missing cases
+        return std::numeric_limits<int>::max();
+    }
 
     /** Auxpow parameters */
     int32_t nAuxpowChainId;
@@ -187,7 +241,9 @@ struct Params {
             return true;
         return static_cast<int> (nHeight) < nLegacyBlocksBefore;
     }
+
 };
+
 } // namespace Consensus
 
 #endif // BITCOIN_CONSENSUS_PARAMS_H

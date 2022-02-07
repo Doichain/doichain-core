@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2016-2020 The Bitcoin Core developers
+# Copyright (c) 2016-2021 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the bumpfee RPC.
@@ -14,27 +14,35 @@ added in the future, they should try to follow the same convention and not
 make assumptions about execution order.
 """
 from decimal import Decimal
-import io
 
-from test_framework.blocktools import add_witness_commitment, create_block, create_coinbase, send_to_witness
-from test_framework.messages import BIP125_SEQUENCE_NUMBER, CTransaction
+from test_framework.blocktools import (
+    COINBASE_MATURITY,
+    add_witness_commitment,
+    create_block,
+    create_coinbase,
+    send_to_witness,
+)
+from test_framework.messages import (
+    BIP125_SEQUENCE_NUMBER,
+)
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_greater_than,
     assert_raises_rpc_error,
-    hex_str_to_bytes,
 )
+from test_framework.wallet import MiniWallet
+
 
 WALLET_PASSPHRASE = "test"
 WALLET_PASSPHRASE_TIMEOUT = 3600
 
-# Fee rates (in BTC per 1000 vbytes)
-INSUFFICIENT = 0.00001000
-ECONOMICAL   = 0.00150000
-NORMAL       = 0.00250000
-HIGH         = 0.00500000
-TOO_HIGH     = 1.00000000
+# Fee rates (sat/vB)
+INSUFFICIENT =      1
+ECONOMICAL   =    150
+NORMAL       =    250
+HIGH         =    500
+TOO_HIGH     = 100000
 
 
 class BumpFeeTest(BitcoinTestFramework):
@@ -52,8 +60,7 @@ class BumpFeeTest(BitcoinTestFramework):
 
     def clear_mempool(self):
         # Clear mempool between subtests. The subtests may only depend on chainstate (utxos)
-        self.nodes[1].generate(1)
-        self.sync_all()
+        self.generate(self.nodes[1], 1)
 
     def run_test(self):
         # Encrypt wallet for test_locked_wallet_fails test
@@ -65,21 +72,18 @@ class BumpFeeTest(BitcoinTestFramework):
 
         # fund rbf node with 10 coins of 0.001 btc (100,000 satoshis)
         self.log.info("Mining blocks...")
-        peer_node.generate(110)
-        self.sync_all()
+        self.generate(peer_node, 110)
         for _ in range(25):
             peer_node.sendtoaddress(rbf_node_address, 0.001)
         self.sync_all()
-        peer_node.generate(1)
-        self.sync_all()
+        self.generate(peer_node, 1)
         assert_equal(rbf_node.getbalance(), Decimal("0.025"))
 
         self.log.info("Running tests")
         dest_address = peer_node.getnewaddress()
-        self.test_invalid_parameters(rbf_node, dest_address)
-        test_simple_bumpfee_succeeds(self, "default", rbf_node, peer_node, dest_address)
-        test_simple_bumpfee_succeeds(self, "fee_rate", rbf_node, peer_node, dest_address)
-        test_feerate_args(self, rbf_node, peer_node, dest_address)
+        for mode in ["default", "fee_rate"]:
+            test_simple_bumpfee_succeeds(self, mode, rbf_node, peer_node, dest_address)
+        self.test_invalid_parameters(rbf_node, peer_node, dest_address)
         test_segwit_bumpfee_succeeds(self, rbf_node, dest_address)
         test_nonrbf_bumpfee_fails(self, peer_node, dest_address)
         test_notmine_bumpfee_fails(self, rbf_node, peer_node, dest_address)
@@ -98,28 +102,59 @@ class BumpFeeTest(BitcoinTestFramework):
         test_small_output_with_feerate_succeeds(self, rbf_node, dest_address)
         test_no_more_inputs_fails(self, rbf_node, dest_address)
 
-    def test_invalid_parameters(self, node, dest_address):
-        txid = spend_one_input(node, dest_address)
-        # invalid estimate mode
-        assert_raises_rpc_error(-8, "Invalid estimate_mode parameter", node.bumpfee, txid, {
-            "estimate_mode": "moo",
-        })
-        assert_raises_rpc_error(-3, "Expected type string", node.bumpfee, txid, {
-            "estimate_mode": 38,
-        })
-        assert_raises_rpc_error(-3, "Expected type string", node.bumpfee, txid, {
-            "estimate_mode": {
-                "foo": "bar",
-            },
-        })
-        assert_raises_rpc_error(-8, "Invalid estimate_mode parameter", node.bumpfee, txid, {
-            "estimate_mode": Decimal("3.141592"),
-        })
-        # confTarget and conf_target
-        assert_raises_rpc_error(-8, "confTarget and conf_target options should not both be set", node.bumpfee, txid, {
-            "confTarget": 123,
-            "conf_target": 456,
-        })
+    def test_invalid_parameters(self, rbf_node, peer_node, dest_address):
+        self.log.info('Test invalid parameters')
+        rbfid = spend_one_input(rbf_node, dest_address)
+        self.sync_mempools((rbf_node, peer_node))
+        assert rbfid in rbf_node.getrawmempool() and rbfid in peer_node.getrawmempool()
+
+        for key in ["totalFee", "feeRate"]:
+            assert_raises_rpc_error(-3, "Unexpected key {}".format(key), rbf_node.bumpfee, rbfid, {key: NORMAL})
+
+        # Bumping to just above minrelay should fail to increase the total fee enough.
+        assert_raises_rpc_error(-8, "Insufficient total fee 0.00000141", rbf_node.bumpfee, rbfid, {"fee_rate": INSUFFICIENT})
+
+        self.log.info("Test invalid fee rate settings")
+        assert_raises_rpc_error(-4, "Specified or calculated fee 0.141 is too high (cannot be higher than -maxtxfee 0.10",
+            rbf_node.bumpfee, rbfid, {"fee_rate": TOO_HIGH})
+        # Test fee_rate with zero values.
+        msg = "Insufficient total fee 0.00"
+        for zero_value in [0, 0.000, 0.00000000, "0", "0.000", "0.00000000"]:
+            assert_raises_rpc_error(-8, msg, rbf_node.bumpfee, rbfid, {"fee_rate": zero_value})
+        msg = "Invalid amount"
+        # Test fee_rate values that don't pass fixed-point parsing checks.
+        for invalid_value in ["", 0.000000001, 1e-09, 1.111111111, 1111111111111111, "31.999999999999999999999"]:
+            assert_raises_rpc_error(-3, msg, rbf_node.bumpfee, rbfid, {"fee_rate": invalid_value})
+        # Test fee_rate values that cannot be represented in sat/vB.
+        for invalid_value in [0.0001, 0.00000001, 0.00099999, 31.99999999, "0.0001", "0.00000001", "0.00099999", "31.99999999"]:
+            assert_raises_rpc_error(-3, msg, rbf_node.bumpfee, rbfid, {"fee_rate": invalid_value})
+        # Test fee_rate out of range (negative number).
+        assert_raises_rpc_error(-3, "Amount out of range", rbf_node.bumpfee, rbfid, {"fee_rate": -1})
+        # Test type error.
+        for value in [{"foo": "bar"}, True]:
+            assert_raises_rpc_error(-3, "Amount is not a number or string", rbf_node.bumpfee, rbfid, {"fee_rate": value})
+
+        self.log.info("Test explicit fee rate raises RPC error if both fee_rate and conf_target are passed")
+        assert_raises_rpc_error(-8, "Cannot specify both conf_target and fee_rate. Please provide either a confirmation "
+            "target in blocks for automatic fee estimation, or an explicit fee rate.",
+            rbf_node.bumpfee, rbfid, {"conf_target": NORMAL, "fee_rate": NORMAL})
+
+        self.log.info("Test explicit fee rate raises RPC error if both fee_rate and estimate_mode are passed")
+        assert_raises_rpc_error(-8, "Cannot specify both estimate_mode and fee_rate",
+            rbf_node.bumpfee, rbfid, {"estimate_mode": "economical", "fee_rate": NORMAL})
+
+        self.log.info("Test invalid conf_target settings")
+        assert_raises_rpc_error(-8, "confTarget and conf_target options should not both be set",
+            rbf_node.bumpfee, rbfid, {"confTarget": 123, "conf_target": 456})
+
+        self.log.info("Test invalid estimate_mode settings")
+        for k, v in {"number": 42, "object": {"foo": "bar"}}.items():
+            assert_raises_rpc_error(-3, "Expected type string for estimate_mode, got {}".format(k),
+                rbf_node.bumpfee, rbfid, {"estimate_mode": v})
+        for mode in ["foo", Decimal("3.1415"), "sat/B", "NMC/kB"]:
+            assert_raises_rpc_error(-8, 'Invalid estimate_mode parameter, must be one of: "unset", "economical", "conservative"',
+                rbf_node.bumpfee, rbfid, {"estimate_mode": mode})
+
         self.clear_mempool()
 
 
@@ -130,7 +165,7 @@ def test_simple_bumpfee_succeeds(self, mode, rbf_node, peer_node, dest_address):
     self.sync_mempools((rbf_node, peer_node))
     assert rbfid in rbf_node.getrawmempool() and rbfid in peer_node.getrawmempool()
     if mode == "fee_rate":
-        bumped_psbt = rbf_node.psbtbumpfee(rbfid, {"fee_rate": NORMAL})
+        bumped_psbt = rbf_node.psbtbumpfee(rbfid, {"fee_rate": str(NORMAL)})
         bumped_tx = rbf_node.bumpfee(rbfid, {"fee_rate": NORMAL})
     else:
         bumped_psbt = rbf_node.psbtbumpfee(rbfid)
@@ -158,33 +193,13 @@ def test_simple_bumpfee_succeeds(self, mode, rbf_node, peer_node, dest_address):
     self.clear_mempool()
 
 
-def test_feerate_args(self, rbf_node, peer_node, dest_address):
-    self.log.info('Test fee_rate args')
-    rbfid = spend_one_input(rbf_node, dest_address)
-    self.sync_mempools((rbf_node, peer_node))
-    assert rbfid in rbf_node.getrawmempool() and rbfid in peer_node.getrawmempool()
-
-    assert_raises_rpc_error(-8, "conf_target can't be set with fee_rate. Please provide either a confirmation target in blocks for automatic fee estimation, or an explicit fee rate.", rbf_node.bumpfee, rbfid, {"fee_rate": NORMAL, "confTarget": 1})
-
-    assert_raises_rpc_error(-3, "Unexpected key totalFee", rbf_node.bumpfee, rbfid, {"totalFee": NORMAL})
-    assert_raises_rpc_error(-8, "conf_target can't be set with fee_rate. Please provide either a confirmation target in blocks for automatic fee estimation, or an explicit fee rate.", rbf_node.bumpfee, rbfid, {"fee_rate":0.00001, "confTarget": 1})
-
-    # Bumping to just above minrelay should fail to increase total fee enough, at least
-    assert_raises_rpc_error(-8, "Insufficient total fee", rbf_node.bumpfee, rbfid, {"fee_rate": INSUFFICIENT})
-
-    assert_raises_rpc_error(-3, "Amount out of range", rbf_node.bumpfee, rbfid, {"fee_rate": -1})
-
-    assert_raises_rpc_error(-4, "is too high (cannot be higher than", rbf_node.bumpfee, rbfid, {"fee_rate": TOO_HIGH})
-    self.clear_mempool()
-
-
 def test_segwit_bumpfee_succeeds(self, rbf_node, dest_address):
     self.log.info('Test that segwit-sourcing bumpfee works')
     # Create a transaction with segwit output, then create an RBF transaction
     # which spends it, and make sure bumpfee can be called on it.
 
     segwit_in = next(u for u in rbf_node.listunspent() if u["amount"] == Decimal("0.001"))
-    segwit_out = rbf_node.getaddressinfo(rbf_node.getnewaddress(address_type='p2sh-segwit'))
+    segwit_out = rbf_node.getaddressinfo(rbf_node.getnewaddress(address_type='bech32'))
     segwitid = send_to_witness(
         use_p2wsh=False,
         node=rbf_node,
@@ -248,6 +263,14 @@ def test_bumpfee_with_descendant_fails(self, rbf_node, rbf_node_address, dest_ad
     tx = rbf_node.signrawtransactionwithwallet(tx)
     rbf_node.sendrawtransaction(tx["hex"])
     assert_raises_rpc_error(-8, "Transaction has descendants in the wallet", rbf_node.bumpfee, parent_id)
+
+    # create tx with descendant in the mempool by using MiniWallet
+    miniwallet = MiniWallet(rbf_node)
+    parent_id = spend_one_input(rbf_node, miniwallet.get_address())
+    tx = rbf_node.gettransaction(txid=parent_id, verbose=True)['decoded']
+    miniwallet.scan_tx(tx)
+    miniwallet.send_self_transfer(from_node=rbf_node)
+    assert_raises_rpc_error(-8, "Transaction has descendants in the mempool", rbf_node.bumpfee, parent_id)
     self.clear_mempool()
 
 
@@ -255,7 +278,7 @@ def test_small_output_with_feerate_succeeds(self, rbf_node, dest_address):
     self.log.info('Testing small output with feerate bump succeeds')
 
     # Make sure additional inputs exist
-    rbf_node.generatetoaddress(101, rbf_node.getnewaddress())
+    self.generatetoaddress(rbf_node, COINBASE_MATURITY + 1, rbf_node.getnewaddress())
     rbfid = spend_one_input(rbf_node, dest_address)
     input_list = rbf_node.getrawtransaction(rbfid, 1)["vin"]
     assert_equal(len(input_list), 1)
@@ -288,7 +311,7 @@ def test_small_output_with_feerate_succeeds(self, rbf_node, dest_address):
             if txin["txid"] == original_txin["txid"]
             and txin["vout"] == original_txin["vout"]]
 
-    rbf_node.generatetoaddress(1, rbf_node.getnewaddress())
+    self.generatetoaddress(rbf_node, 1, rbf_node.getnewaddress())
     assert_equal(rbf_node.gettransaction(rbfid)["confirmations"], 1)
     self.clear_mempool()
 
@@ -303,11 +326,11 @@ def test_dust_to_fee(self, rbf_node, dest_address):
     # boundary. Thus expected transaction size (p2wpkh, 1 input, 2 outputs) is 140-141 vbytes, usually 141.
     if not 140 <= fulltx["vsize"] <= 141:
         raise AssertionError("Invalid tx vsize of {} (140-141 expected), full tx: {}".format(fulltx["vsize"], fulltx))
-    # Bump with fee_rate of 0.00350250 BTC per 1000 vbytes to create dust.
+    # Bump with fee_rate of 350.25 sat/vB vbytes to create dust.
     # Expected fee is 141 vbytes * fee_rate 0.00350250 BTC / 1000 vbytes = 0.00049385 BTC.
     # or occasionally 140 vbytes * fee_rate 0.00350250 BTC / 1000 vbytes = 0.00049035 BTC.
     # Dust should be dropped to the fee, so actual bump fee is 0.00050000 BTC.
-    bumped_tx = rbf_node.bumpfee(rbfid, {"fee_rate": 0.00350250})
+    bumped_tx = rbf_node.bumpfee(rbfid, {"fee_rate": 350.25})
     full_bumped_tx = rbf_node.getrawtransaction(bumped_tx["txid"], 1)
     assert_equal(bumped_tx["fee"], Decimal("0.00050000"))
     assert_equal(len(fulltx["vout"]), 2)
@@ -348,7 +371,7 @@ def test_maxtxfee_fails(self, rbf_node, dest_address):
     self.restart_node(1, ['-maxtxfee=0.000025'] + self.extra_args[1])
     rbf_node.walletpassphrase(WALLET_PASSPHRASE, WALLET_PASSPHRASE_TIMEOUT)
     rbfid = spend_one_input(rbf_node, dest_address)
-    assert_raises_rpc_error(-4, "Unable to create transaction. Fee exceeds maximum configured by -maxtxfee", rbf_node.bumpfee, rbfid)
+    assert_raises_rpc_error(-4, "Unable to create transaction. Fee exceeds maximum configured by user (e.g. -maxtxfee, maxfeerate)", rbf_node.bumpfee, rbfid)
     self.restart_node(1, self.extra_args[1])
     rbf_node.walletpassphrase(WALLET_PASSPHRASE, WALLET_PASSPHRASE_TIMEOUT)
     self.connect_nodes(1, 0)
@@ -365,7 +388,7 @@ def test_watchonly_psbt(self, peer_node, rbf_node, dest_address):
     rbf_node.createwallet(wallet_name="signer", disable_private_keys=False, blank=True)
     signer = rbf_node.get_wallet_rpc("signer")
     assert signer.getwalletinfo()['private_keys_enabled']
-    result = signer.importmulti([{
+    reqs = [{
         "desc": priv_rec_desc,
         "timestamp": 0,
         "range": [0,1],
@@ -378,7 +401,11 @@ def test_watchonly_psbt(self, peer_node, rbf_node, dest_address):
         "range": [0, 0],
         "internal": True,
         "keypool": False
-    }])
+    }]
+    if self.options.descriptors:
+        result = signer.importdescriptors(reqs)
+    else:
+        result = signer.importmulti(reqs)
     assert_equal(result, [{'success': True}, {'success': True}])
 
     # Create another wallet with just the public keys, which creates PSBTs
@@ -386,35 +413,43 @@ def test_watchonly_psbt(self, peer_node, rbf_node, dest_address):
     watcher = rbf_node.get_wallet_rpc("watcher")
     assert not watcher.getwalletinfo()['private_keys_enabled']
 
-    result = watcher.importmulti([{
+    reqs = [{
         "desc": pub_rec_desc,
         "timestamp": 0,
         "range": [0, 10],
         "internal": False,
         "keypool": True,
-        "watchonly": True
+        "watchonly": True,
+        "active": True,
     }, {
         "desc": pub_change_desc,
         "timestamp": 0,
         "range": [0, 10],
         "internal": True,
         "keypool": True,
-        "watchonly": True
-    }])
+        "watchonly": True,
+        "active": True,
+    }]
+    if self.options.descriptors:
+        result = watcher.importdescriptors(reqs)
+    else:
+        result = watcher.importmulti(reqs)
     assert_equal(result, [{'success': True}, {'success': True}])
 
     funding_address1 = watcher.getnewaddress(address_type='bech32')
     funding_address2 = watcher.getnewaddress(address_type='bech32')
     peer_node.sendmany("", {funding_address1: 0.001, funding_address2: 0.001})
-    peer_node.generate(1)
-    self.sync_all()
+    self.generate(peer_node, 1)
 
     # Create single-input PSBT for transaction to be bumped
-    psbt = watcher.walletcreatefundedpsbt([], {dest_address: 0.0005}, 0, {"feeRate": 0.00001}, True)['psbt']
+    psbt = watcher.walletcreatefundedpsbt([], {dest_address: 0.0005}, 0, {"fee_rate": 1}, True)['psbt']
     psbt_signed = signer.walletprocesspsbt(psbt=psbt, sign=True, sighashtype="ALL", bip32derivs=True)
     psbt_final = watcher.finalizepsbt(psbt_signed["psbt"])
     original_txid = watcher.sendrawtransaction(psbt_final["hex"])
     assert_equal(len(watcher.decodepsbt(psbt)["tx"]["vin"]), 1)
+
+    # bumpfee can't be used on watchonly wallets
+    assert_raises_rpc_error(-4, "bumpfee is not available with wallets that have private keys disabled. Use psbtbumpfee instead.", watcher.bumpfee, original_txid)
 
     # Bump fee, obnoxiously high to add additional watchonly input
     bumped_psbt = watcher.psbtbumpfee(original_txid, {"fee_rate": HIGH})
@@ -489,7 +524,7 @@ def test_unconfirmed_not_spendable(self, rbf_node, rbf_node_address):
     assert_equal([t for t in rbf_node.listunspent(minconf=0, include_unsafe=False) if t["txid"] == rbfid], [])
 
     # check that the main output from the rbf tx is spendable after confirmed
-    rbf_node.generate(1)
+    self.generate(rbf_node, 1, sync_fun=self.no_op)
     assert_equal(
         sum(1 for t in rbf_node.listunspent(minconf=0, include_unsafe=False)
             if t["txid"] == rbfid and t["address"] == rbf_node_address and t["spendable"]), 1)
@@ -499,7 +534,7 @@ def test_unconfirmed_not_spendable(self, rbf_node, rbf_node_address):
 def test_bumpfee_metadata(self, rbf_node, dest_address):
     self.log.info('Test that bumped txn metadata persists to new txn record')
     assert(rbf_node.getbalance() < 49)
-    rbf_node.generatetoaddress(101, rbf_node.getnewaddress())
+    self.generatetoaddress(rbf_node, 101, rbf_node.getnewaddress())
     rbfid = rbf_node.sendtoaddress(dest_address, 49, "comment value", "to value")
     bumped_tx = rbf_node.bumpfee(rbfid)
     bumped_wtx = rbf_node.gettransaction(bumped_tx["txid"])
@@ -523,7 +558,7 @@ def test_change_script_match(self, rbf_node, dest_address):
 
     def get_change_address(tx):
         tx_details = rbf_node.getrawtransaction(tx, 1)
-        txout_addresses = [txout['scriptPubKey']['addresses'][0] for txout in tx_details["vout"]]
+        txout_addresses = [txout['scriptPubKey']['address'] for txout in tx_details["vout"]]
         return [address for address in txout_addresses if rbf_node.getaddressinfo(address)["ischange"]]
 
     # Check that there is only one change output
@@ -552,16 +587,10 @@ def spend_one_input(node, dest_address, change_size=Decimal("0.00049000")):
 
 
 def submit_block_with_tx(node, tx):
-    ctx = CTransaction()
-    ctx.deserialize(io.BytesIO(hex_str_to_bytes(tx)))
-
     tip = node.getbestblockhash()
     height = node.getblockcount() + 1
     block_time = node.getblockheader(tip)["mediantime"] + 1
-    block = create_block(int(tip, 16), create_coinbase(height), block_time)
-    block.vtx.append(ctx)
-    block.rehash()
-    block.hashMerkleRoot = block.calc_merkle_root()
+    block = create_block(int(tip, 16), create_coinbase(height), block_time, txlist=[tx])
     add_witness_commitment(block)
     block.solve()
     node.submitblock(block.serialize().hex())
@@ -571,7 +600,7 @@ def submit_block_with_tx(node, tx):
 def test_no_more_inputs_fails(self, rbf_node, dest_address):
     self.log.info('Test that bumpfee fails when there are no available confirmed outputs')
     # feerate rbf requires confirmed outputs when change output doesn't exist or is insufficient
-    rbf_node.generatetoaddress(1, dest_address)
+    self.generatetoaddress(rbf_node, 1, dest_address)
     # spend all funds, no change output
     rbfid = rbf_node.sendtoaddress(rbf_node.getnewaddress(), rbf_node.getbalance(), "", "", True)
     assert_raises_rpc_error(-4, "Unable to create transaction. Insufficient funds", rbf_node.bumpfee, rbfid)

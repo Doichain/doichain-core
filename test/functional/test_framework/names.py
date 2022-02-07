@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-2019 Daniel Kraft
+# Copyright (c) 2014-2021 Daniel Kraft
 # Distributed under the MIT/X11 software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -12,6 +12,9 @@ from .util import assert_equal
 
 class NameTestFramework (BitcoinTestFramework):
 
+  def skip_test_if_missing_module(self):
+    self.skip_if_no_wallet()
+
   def setup_name_test (self, args = [[]] * 4):
     self.num_nodes = len (args)
     self.extra_args = args
@@ -21,7 +24,7 @@ class NameTestFramework (BitcoinTestFramework):
     # test_framework.py.  This is needed to get us out of IBD.
     self.mocktime = 1388534400 + (201 * 10 * 60)
 
-  def firstupdateName (self, ind, name, newData, value,
+  def firstupdateName (self, ind, name, newData, value = None,
                        opt = None, allowActive = False):
     """
     Utility routine to perform a name_firstupdate command.  The rand
@@ -36,9 +39,11 @@ class NameTestFramework (BitcoinTestFramework):
       return node.name_firstupdate (name, newData[1], newData[0],
                                     value, opt, True)
 
-    if opt is None:
+    if opt is not None:
+      return node.name_firstupdate (name, newData[1], newData[0], value, opt)
+    if value is not None:
       return node.name_firstupdate (name, newData[1], newData[0], value)
-    return node.name_firstupdate (name, newData[1], newData[0], value, opt)
+    return node.name_firstupdate (name, newData[1], newData[0])
 
   def checkName (self, ind, name, value, expiresIn, expired):
     """
@@ -88,7 +93,7 @@ class NameTestFramework (BitcoinTestFramework):
 
     tx = self.nodes[ind].decoderawtransaction (txhex)
     for i, vout in enumerate (tx['vout']):
-      if addr in vout['scriptPubKey']['addresses']:
+      if addr == vout['scriptPubKey']['address']:
         return i
 
     return None

@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2018 The Bitcoin Core developers
+// Copyright (c) 2009-2020 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -15,6 +15,7 @@
 #include <uint256.h>
 #include <version.h>
 
+#include <string>
 #include <vector>
 
 typedef uint256 ChainCode;
@@ -196,10 +197,18 @@ uint256 SerializeHash(const T& obj, int nType=SER_GETHASH, int nVersion=PROTOCOL
 }
 
 /** Single-SHA256 a 32-byte input (represented as uint256). */
-NODISCARD uint256 SHA256Uint256(const uint256& input);
+[[nodiscard]] uint256 SHA256Uint256(const uint256& input);
 
 unsigned int MurmurHash3(unsigned int nHashSeed, Span<const unsigned char> vDataToHash);
 
 void BIP32Hash(const ChainCode &chainCode, unsigned int nChild, unsigned char header, const unsigned char data[32], unsigned char output[64]);
+
+/** Return a CHashWriter primed for tagged hashes (as specified in BIP 340).
+ *
+ * The returned object will have SHA256(tag) written to it twice (= 64 bytes).
+ * A tagged hash can be computed by feeding the message into this object, and
+ * then calling CHashWriter::GetSHA256().
+ */
+CHashWriter TaggedHash(const std::string& tag);
 
 #endif // BITCOIN_HASH_H

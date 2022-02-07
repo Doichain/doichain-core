@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2017-2020 The Bitcoin Core developers
+# Copyright (c) 2017-2021 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Class for doichaind node under test"""
@@ -20,12 +20,14 @@ import urllib.parse
 import collections
 import shlex
 import sys
+from pathlib import Path
 
 from .authproxy import JSONRPCException
 from .descriptors import descsum_create
-from .messages import MY_SUBVERSION
+from .p2p import P2P_SUBVERSION
 from .util import (
     MAX_NODES,
+    assert_equal,
     append_config,
     config_file,
     delete_cookie_file,
@@ -72,6 +74,7 @@ class TestNode():
         """
 
         self.index = i
+        self.p2p_conn_index = 1
         self.datadir = datadir
         self.bitcoinconf = os.path.join(self.datadir, config_file)
         self.stdout_dir = os.path.join(self.datadir, "stdout")
@@ -114,6 +117,8 @@ class TestNode():
 
         if self.version_is_at_least(190000):
             self.args.append("-logthreadnames")
+        if self.version_is_at_least(219900):
+            self.args.append("-logsourcelocations")
 
         self.cli = TestNodeCLI(bitcoin_cli, self.datadir)
         self.use_cli = use_cli
@@ -274,7 +279,7 @@ class TestNode():
                     return
                 self.rpc = rpc
                 self.rpc_connected = True
-                self.url = self.rpc.url
+                self.url = self.rpc.rpc_url
                 return
             except JSONRPCException as e:  # Initialization phase
                 # -28 RPC in warmup
@@ -313,9 +318,21 @@ class TestNode():
             time.sleep(1.0 / poll_per_s)
         self._raise_assertion_error("Unable to retrieve cookie credentials after {}s".format(self.rpc_timeout))
 
-    def generate(self, nblocks, maxtries=1000000):
+    def generate(self, nblocks, maxtries=1000000, **kwargs):
         self.log.debug("TestNode.generate() dispatches `generate` call to `generatetoaddress`")
-        return self.generatetoaddress(nblocks=nblocks, address=self.get_deterministic_priv_key().address, maxtries=maxtries)
+        return self.generatetoaddress(nblocks=nblocks, address=self.get_deterministic_priv_key().address, maxtries=maxtries, **kwargs)
+
+    def generateblock(self, *args, invalid_call, **kwargs):
+        assert not invalid_call
+        return self.__getattr__('generateblock')(*args, **kwargs)
+
+    def generatetoaddress(self, *args, invalid_call, **kwargs):
+        assert not invalid_call
+        return self.__getattr__('generatetoaddress')(*args, **kwargs)
+
+    def generatetodescriptor(self, *args, invalid_call, **kwargs):
+        assert not invalid_call
+        return self.__getattr__('generatetodescriptor')(*args, **kwargs)
 
     def get_wallet_rpc(self, wallet_name):
         if self.use_cli:
@@ -328,7 +345,7 @@ class TestNode():
     def version_is_at_least(self, ver):
         return self.version is None or self.version >= ver
 
-    def stop_node(self, expected_stderr='', wait=0):
+    def stop_node(self, expected_stderr='', *, wait=0, wait_until_stopped=True):
         """Stop the node."""
         if not self.running:
             return
@@ -357,6 +374,9 @@ class TestNode():
 
         del self.p2ps[:]
 
+        if wait_until_stopped:
+            self.wait_until_stopped()
+
     def is_node_stopped(self):
         """Checks whether the node has stopped.
 
@@ -381,13 +401,20 @@ class TestNode():
     def wait_until_stopped(self, timeout=BITCOIND_PROC_WAIT_TIMEOUT):
         wait_until_helper(self.is_node_stopped, timeout=timeout, timeout_factor=self.timeout_factor)
 
+    @property
+    def chain_path(self) -> Path:
+        return Path(self.datadir) / self.chain
+
+    @property
+    def debug_log_path(self) -> Path:
+        return self.chain_path / 'debug.log'
+
     @contextlib.contextmanager
     def assert_debug_log(self, expected_msgs, unexpected_msgs=None, timeout=2):
         if unexpected_msgs is None:
             unexpected_msgs = []
         time_end = time.time() + timeout * self.timeout_factor
-        debug_log = os.path.join(self.datadir, self.chain, 'debug.log')
-        with open(debug_log, encoding='utf-8') as dl:
+        with open(self.debug_log_path, encoding='utf-8') as dl:
             dl.seek(0, 2)
             prev_size = dl.tell()
 
@@ -395,7 +422,7 @@ class TestNode():
 
         while True:
             found = True
-            with open(debug_log, encoding='utf-8') as dl:
+            with open(self.debug_log_path, encoding='utf-8') as dl:
                 dl.seek(prev_size)
                 log = dl.read()
             print_log = " - " + "\n - ".join(log.splitlines())
@@ -413,14 +440,14 @@ class TestNode():
         self._raise_assertion_error('Expected messages "{}" does not partially match log:\n\n{}\n\n'.format(str(expected_msgs), print_log))
 
     @contextlib.contextmanager
-    def profile_with_perf(self, profile_name):
+    def profile_with_perf(self, profile_name: str):
         """
         Context manager that allows easy profiling of node activity using `perf`.
 
         See `test/functional/README.md` for details on perf usage.
 
         Args:
-            profile_name (str): This string will be appended to the
+            profile_name: This string will be appended to the
                 profile data filename generated by perf.
         """
         subp = self._start_perf(profile_name)
@@ -525,7 +552,11 @@ class TestNode():
                         if expected_msg != stderr:
                             self._raise_assertion_error(
                                 'Expected message "{}" does not fully match stderr:\n"{}"'.format(expected_msg, stderr))
-            else:
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.running = False
+                self.process = None
+                assert_msg = f'namecoind should have exited within {self.rpc_timeout}s '
                 if expected_msg is None:
                     assert_msg = "doichaind should have exited with an error"
                 else:
@@ -533,7 +564,7 @@ class TestNode():
                 self._raise_assertion_error(assert_msg)
 
     def add_p2p_connection(self, p2p_conn, *, wait_for_verack=True, **kwargs):
-        """Add a p2p connection to the node.
+        """Add an inbound p2p connection to the node.
 
         This method adds the p2p connection to the self.p2ps list and also
         returns the connection to the caller."""
@@ -560,26 +591,45 @@ class TestNode():
             # in comparison to the upside of making tests less fragile and unexpected intermittent errors less likely.
             p2p_conn.sync_with_ping()
 
+            # Consistency check that the Bitcoin Core has received our user agent string. This checks the
+            # node's newest peer. It could be racy if another Bitcoin Core node has connected since we opened
+            # our connection, but we don't expect that to happen.
+            assert_equal(self.getpeerinfo()[-1]['subver'], P2P_SUBVERSION)
+
         return p2p_conn
 
-    @property
-    def p2p(self):
-        """Return the first p2p connection
+    def add_outbound_p2p_connection(self, p2p_conn, *, p2p_idx, connection_type="outbound-full-relay", **kwargs):
+        """Add an outbound p2p connection from node. Must be an
+        "outbound-full-relay", "block-relay-only" or "addr-fetch" connection.
 
-        Convenience property - most tests only use a single p2p connection to each
-        node, so this saves having to write node.p2ps[0] many times."""
-        assert self.p2ps, self._node_msg("No p2p connection")
-        return self.p2ps[0]
+        This method adds the p2p connection to the self.p2ps list and returns
+        the connection to the caller.
+        """
+
+        def addconnection_callback(address, port):
+            self.log.debug("Connecting to %s:%d %s" % (address, port, connection_type))
+            self.addconnection('%s:%d' % (address, port), connection_type)
+
+        p2p_conn.peer_accept_connection(connect_cb=addconnection_callback, connect_id=p2p_idx + 1, net=self.chain, timeout_factor=self.timeout_factor, **kwargs)()
+
+        p2p_conn.wait_for_connect()
+        self.p2ps.append(p2p_conn)
+
+        p2p_conn.wait_for_verack()
+        p2p_conn.sync_with_ping()
+
+        return p2p_conn
 
     def num_test_p2p_connections(self):
         """Return number of test framework p2p connections to the node."""
-        return len([peer for peer in self.getpeerinfo() if peer['subver'] == MY_SUBVERSION])
+        return len([peer for peer in self.getpeerinfo() if peer['subver'] == P2P_SUBVERSION])
 
     def disconnect_p2ps(self):
         """Close all p2p connections to the node."""
         for p in self.p2ps:
             p.peer_disconnect()
         del self.p2ps[:]
+
         wait_until_helper(lambda: self.num_test_p2p_connections() == 0, timeout_factor=self.timeout_factor)
 
 
@@ -670,10 +720,10 @@ class RPCOverloadWrapper():
     def __getattr__(self, name):
         return getattr(self.rpc, name)
 
-    def createwallet(self, wallet_name, disable_private_keys=None, blank=None, passphrase='', avoid_reuse=None, descriptors=None, load_on_startup=None):
+    def createwallet(self, wallet_name, disable_private_keys=None, blank=None, passphrase='', avoid_reuse=None, descriptors=None, load_on_startup=None, external_signer=None):
         if descriptors is None:
             descriptors = self.descriptors
-        return self.__getattr__('createwallet')(wallet_name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup)
+        return self.__getattr__('createwallet')(wallet_name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup, external_signer)
 
     def importprivkey(self, privkey, label=None, rescan=None):
         wallet_info = self.getwalletinfo()

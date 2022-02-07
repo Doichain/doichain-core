@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2020 Daniel Kraft
+// Copyright (c) 2014-2021 Daniel Kraft
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -13,8 +13,7 @@
 #include <memory>
 #include <set>
 
-class CCoinsView;
-class ChainstateManager;
+class CCoinsViewCache;
 class CTxMemPool;
 class CTxMemPoolEntry;
 
@@ -187,7 +186,7 @@ public:
   /**
    * Performs sanity checks.  Throws if it fails.
    */
-  void check (ChainstateManager& chainman, const CCoinsView& coins) const;
+  void check (const CCoinsViewCache& tip, int64_t spendheight) const;
 
   /**
    * Checks if a tx can be added (based on name criteria) without

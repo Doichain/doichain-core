@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2020 Daniel Kraft
+# Copyright (c) 2020-2021 Daniel Kraft
 # Distributed under the MIT/X11 software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -17,59 +17,59 @@ class NameAntWorkflowTest (NameTestFramework):
     self.setup_name_test ([[]] * 2)
 
   def run_test (self):
-    self.nodes[1].generate (10)
+    self.generate (self.nodes[1], 10)
     self.sync_blocks ()
-    self.nodes[0].generate (150)
+    self.generate (self.nodes[0], 150)
 
     new = self.nodes[0].name_new ("x/name")
-    self.nodes[0].generate (10)
+    self.generate (self.nodes[0], 10)
     self.firstupdateName (0, "x/name", new, "value")
-    self.nodes[0].generate (5)
+    self.generate (self.nodes[0], 5)
     self.sync_blocks ()
     self.checkName (0, "x/name", "value", None, False)
 
-    # fundrawtransaction and friends does not support non-wallet provided
-    # inputs.  Thus we have to first build up the funded transaction without
-    # the name input and a slightly higher fee, and then combine it with the
-    # name input to obtain the final raw transaction.
-    addrNm = self.nodes[1].getnewaddress ()
+    # We construct the base transaction first, with just the name input,
+    # name output (including the operation) and the payment output.
+    # We then apply fundrawtransaction to add the necessary input and change
+    # for the payment; this needs solving data for the non-wallet input
+    # (the name) to be passed in, which in this case is the pubkey for the
+    # name input address.
+
     addrPayment = self.nodes[0].getnewaddress ()
-    outs = [{addrNm: 0.01}, {addrPayment: 10}]
-    part1 = self.nodes[1].createrawtransaction ([], outs)
-    options = {
-      "feeRate": 0.001,
-      "changePosition": 2,
-    }
-    part1 = self.nodes[1].fundrawtransaction (part1, options)["hex"]
+    addrNm = self.nodes[1].getnewaddress ()
 
     nmData = self.nodes[0].name_show ("x/name")
-    part2 = self.nodes[0].createrawtransaction ([nmData], [])
+    addrNmOld = nmData["address"]
+    pubKey = self.nodes[0].getaddressinfo (addrNmOld)["pubkey"]
 
-    fullIns = []
-    fullOuts = []
-    for p in [part1, part2]:
-      data = self.nodes[0].decoderawtransaction (p)
-      fullIns.extend (data["vin"])
-      for vout in data["vout"]:
-        fullOuts.append ({vout["scriptPubKey"]["addresses"][0]: vout["value"]})
-    combined = self.nodes[1].createrawtransaction (fullIns, fullOuts)
-    combined = self.nodes[1].converttopsbt (combined)
-
+    tx = self.nodes[1].createrawtransaction ([nmData], {
+      addrPayment: 10,
+      addrNm: 0.01,
+    })
+    vout = self.rawtxOutputIndex (1, tx, addrNm)
     nameOp = {
       "op": "name_update",
       "name": "x/name",
       "value": "updated",
     }
-    combined = self.nodes[1].namepsbt (combined, 0, nameOp)["psbt"]
+    tx = self.nodes[1].namerawtransaction (tx, vout, nameOp)["hex"]
+
+    options = {
+      "solving_data": {
+        "pubkeys": [pubKey],
+      },
+    }
+    tx = self.nodes[1].fundrawtransaction (tx, options)["hex"]
+    psbt = self.nodes[1].converttopsbt (tx)
 
     # Sign and broadcast the partial tx.
-    sign1 = self.nodes[0].walletprocesspsbt (combined)
-    sign2 = self.nodes[1].walletprocesspsbt (combined)
+    sign1 = self.nodes[0].walletprocesspsbt (psbt)
+    sign2 = self.nodes[1].walletprocesspsbt (psbt)
     combined = self.nodes[1].combinepsbt ([sign1["psbt"], sign2["psbt"]])
     tx = self.nodes[1].finalizepsbt (combined)
     assert_equal (tx["complete"], True)
     self.nodes[0].sendrawtransaction (tx["hex"])
-    self.nodes[0].generate (1)
+    self.generate (self.nodes[0], 1)
     data = self.checkName (0, "x/name", "updated", None, False)
     assert_equal (data["address"], addrNm)
 

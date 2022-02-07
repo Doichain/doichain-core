@@ -13,8 +13,9 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <vector>
 
-BOOST_FIXTURE_TEST_SUITE(uint256_tests, BasicTestingSetup)
+BOOST_AUTO_TEST_SUITE(uint256_tests)
 
 const unsigned char R1Array[] =
     "\x9c\x52\x4a\xdb\xcf\x56\x11\x12\x2b\x29\x12\x5e\x5d\x35\xd2\xd2"
@@ -276,6 +277,12 @@ BOOST_AUTO_TEST_CASE( operator_with_self )
     BOOST_CHECK(v == UintToArith256(uint256S("02")));
     v -= v;
     BOOST_CHECK(v == UintToArith256(uint256S("0")));
+}
+
+BOOST_AUTO_TEST_CASE( check_ONE )
+{
+    uint256 one = uint256S("0000000000000000000000000000000000000000000000000000000000000001");
+    BOOST_CHECK_EQUAL(one, uint256::ONE);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2020 Daniel Kraft
+// Copyright (c) 2014-2021 Daniel Kraft
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,6 +9,7 @@
 
 #include <names/encoding.h>
 #include <rpc/util.h>
+#include <span.h>
 
 #include <string>
 #include <vector>
@@ -16,17 +17,23 @@
 /** Default value for the -allowexpired argument.  */
 static constexpr bool DEFAULT_ALLOWEXPIRED = false;
 
+class ChainstateManager;
 class CNameData;
 class COutPoint;
+class CRPCCommand;
 class CScript;
 class UniValue;
 
 UniValue getNameInfo (const UniValue& options,
                       const valtype& name, const valtype& value,
                       const COutPoint& outp, const CScript& addr);
-UniValue getNameInfo (const UniValue& options,
+UniValue getNameInfo (const ChainstateManager& chainman,
+                      const UniValue& options,
                       const valtype& name, const CNameData& data);
-void addExpirationInfo (int height, UniValue& data);
+void addExpirationInfo (const ChainstateManager& chainman,
+                        int height, UniValue& data);
+
+Span<const CRPCCommand> GetNameRPCCommands ();
 
 #ifdef ENABLE_WALLET
 class CWallet;
@@ -124,11 +131,27 @@ public:
                             const std::string& doc);
 
   /**
+   * Variant of withField that adds inner arguments inside.
+   */
+  NameOptionsHelp& withArg (const std::string& name, RPCArg::Type type,
+                            const std::string& doc,
+                            const std::vector<RPCArg> inner);
+
+  /**
    * Adds a new inner argument with a default value.
    */
   NameOptionsHelp& withArg (const std::string& name, RPCArg::Type type,
                             const std::string& defaultValue,
                             const std::string& doc);
+
+  /**
+   * Adds a new inner argument with a default value and also inner
+   * arguments inside the argument itself.
+   */
+  NameOptionsHelp& withArg (const std::string& name, RPCArg::Type type,
+                            const std::string& defaultValue,
+                            const std::string& doc,
+                            const std::vector<RPCArg> inner);
 
   /**
    * Constructs the RPCArg object for the options argument described by this

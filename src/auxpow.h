@@ -1,6 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2014 The Bitcoin developers
-// Copyright (c) 2014-2019 Daniel Kraft
+// Copyright (c) 2014-2021 Daniel Kraft
 // Distributed under the MIT/X11 software license, see the accompanying
 // file license.txt or http://www.opensource.org/licenses/mit-license.php.
 
@@ -20,6 +20,7 @@
 class CBlock;
 class CBlockHeader;
 class CBlockIndex;
+class CChainState;
 class CValidationState;
 class UniValue;
 
@@ -64,7 +65,8 @@ private:
                                     const std::vector<uint256>& vMerkleBranch,
                                     int nIndex);
 
-  friend UniValue AuxpowToJSON(const CAuxPow& auxpow);
+  friend UniValue AuxpowToJSON(const CAuxPow& auxpow, bool verbose,
+                               CChainState& active_chainstate);
   friend class auxpow_tests::CAuxPowForTest;
 
 public:
@@ -75,6 +77,12 @@ public:
   {}
 
   CAuxPow () = default;
+
+  CAuxPow (CAuxPow&&) = default;
+  CAuxPow& operator= (CAuxPow&&) = default;
+
+  CAuxPow (const CAuxPow&) = delete;
+  void operator= (const CAuxPow&) = delete;
 
   SERIALIZE_METHODS (CAuxPow, obj)
   {

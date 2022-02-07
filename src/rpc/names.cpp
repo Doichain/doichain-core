@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2020 Daniel Kraft
+// Copyright (c) 2014-2021 Daniel Kraft
 // Copyright (c) 2020 yanmaani
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -11,17 +11,19 @@
 #include <key_io.h>
 #include <names/common.h>
 #include <names/main.h>
+#include <node/context.h>
 #include <primitives/transaction.h>
 #include <psbt.h>
 #include <rpc/blockchain.h>
 #include <rpc/names.h>
 #include <rpc/server.h>
+#include <rpc/server_util.h>
 #include <script/names.h>
 #include <txmempool.h>
 #include <util/strencodings.h>
 #include <validation.h>
 #ifdef ENABLE_WALLET
-# include <wallet/rpcwallet.h>
+# include <wallet/rpc/util.h>
 # include <wallet/wallet.h>
 #endif
 
@@ -99,14 +101,14 @@ getNameInfo (const UniValue& options,
  * Return name info object for a CNameData object.
  */
 UniValue
-getNameInfo (const UniValue& options,
+getNameInfo (const ChainstateManager& chainman, const UniValue& options,
              const valtype& name, const CNameData& data)
 {
   UniValue result = getNameInfo (options,
                                  name, data.getValue (),
                                  data.getUpdateOutpoint (),
                                  data.getAddress ());
-  addExpirationInfo (data.getHeight (), result);
+  addExpirationInfo (chainman, data.getHeight (), result);
   return result;
 }
 
@@ -115,9 +117,10 @@ getNameInfo (const UniValue& options,
  * height for the name given.
  */
 void
-addExpirationInfo (const int height, UniValue& data)
+addExpirationInfo (const ChainstateManager& chainman,
+                   const int height, UniValue& data)
 {
-  const int curHeight = ::ChainActive ().Height ();
+  const int curHeight = chainman.ActiveHeight ();
   const Consensus::Params& params = Params ().GetConsensus ();
   const int expireDepth = params.rules->NameExpirationDepth (curHeight);
   const int expireHeight = height + expireDepth;
@@ -262,7 +265,14 @@ public:
 #ifdef ENABLE_WALLET
     try
       {
-        wallet = GetWalletForJSONRPCRequest (request);
+        /* GetWalletForJSONRPCRequest throws an internal error if there
+           is no wallet context.  We want to handle this situation gracefully
+           and just fall back to not having a wallet in this case.  */
+        if (util::AnyPtr<WalletContext> (request.context))
+          {
+            wallet = GetWalletForJSONRPCRequest (request);
+            return;
+          }
       }
     catch (const UniValue& exc)
       {
@@ -270,10 +280,11 @@ public:
         if (!code.isNum () || code.get_int () != RPC_WALLET_NOT_SPECIFIED)
           throw;
 
-        /* If the wallet is not set, that's fine, and we just indicate it to
-           other code (by having a null wallet).  */
-        wallet = nullptr;
       }
+
+    /* If the wallet is not set, that's fine, and we just indicate it to
+       other code (by having a null wallet).  */
+    wallet = nullptr;
 #endif
   }
 
@@ -321,11 +332,11 @@ addOwnershipInfo (const CScript& addr, const MaybeWalletForRequest& wallet,
  * This is the most common call for methods in this file.
  */
 UniValue
-getNameInfo (const UniValue& options,
+getNameInfo (const ChainstateManager& chainman, const UniValue& options,
              const valtype& name, const CNameData& data,
              const MaybeWalletForRequest& wallet)
 {
-  UniValue res = getNameInfo (options, name, data);
+  UniValue res = getNameInfo (chainman, options, name, data);
   addOwnershipInfo (data.getAddress (), wallet, res);
   return res;
 }
@@ -371,7 +382,15 @@ NameOptionsHelp&
 NameOptionsHelp::withArg (const std::string& name, const RPCArg::Type type,
                           const std::string& doc)
 {
-  return withArg (name, type, "", doc);
+  return withArg (name, type, "", doc, {});
+}
+
+NameOptionsHelp&
+NameOptionsHelp::withArg (const std::string& name, const RPCArg::Type type,
+                          const std::string& doc,
+                          const std::vector<RPCArg> inner)
+{
+  return withArg (name, type, "", doc, std::move (inner));
 }
 
 NameOptionsHelp&
@@ -379,10 +398,25 @@ NameOptionsHelp::withArg (const std::string& name, const RPCArg::Type type,
                           const std::string& defaultValue,
                           const std::string& doc)
 {
+  return withArg (name, type, defaultValue, doc, {});
+}
+
+NameOptionsHelp&
+NameOptionsHelp::withArg (const std::string& name, const RPCArg::Type type,
+                          const std::string& defaultValue,
+                          const std::string& doc,
+                          const std::vector<RPCArg> inner)
+{
+  RPCArg::Fallback fb;
   if (defaultValue.empty ())
-    innerArgs.push_back (RPCArg (name, type, RPCArg::Optional::OMITTED, doc));
+    fb = RPCArg::Optional::OMITTED;
   else
-    innerArgs.push_back (RPCArg (name, type, defaultValue, doc));
+    fb = defaultValue;
+
+  if (inner.empty ())
+    innerArgs.emplace_back (name, type, fb, doc);
+  else
+    innerArgs.emplace_back (name, type, fb, doc, std::move (inner));
 
   return *this;
 }
@@ -394,7 +428,12 @@ NameOptionsHelp::withWriteOptions ()
            "The address to send the name output to");
 
   withArg ("sendCoins", RPCArg::Type::OBJ_USER_KEYS,
-           "Addresses to which coins should be sent additionally");
+           "Addresses to which coins should be sent additionally",
+           {
+              {"address", RPCArg::Type::AMOUNT, RPCArg::Optional::NO,
+               "A key-value pair. The key (string) is the address,"
+               " the value (float or string) is the amount in " + CURRENCY_UNIT}
+           });
 
   return *this;
 }
@@ -439,14 +478,12 @@ namespace
 RPCHelpMan
 name_show ()
 {
-  const bool allow_expired_default = gArgs.GetBoolArg("-allowexpired", DEFAULT_ALLOWEXPIRED);
-
   NameOptionsHelp optHelp;
   optHelp
       .withNameEncoding ()
       .withValueEncoding ()
       .withByHash ()
-      .withArg ("allowExpired", RPCArg::Type::BOOL, allow_expired_default ? "true" : "false",
+      .withArg ("allowExpired", RPCArg::Type::BOOL, "depends on -allowexpired",
                 "Whether to throw error for expired names");
 
   return RPCHelpMan ("name_show",
@@ -466,8 +503,9 @@ name_show ()
       [&] (const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
   RPCTypeCheck (request.params, {UniValue::VSTR, UniValue::VOBJ});
+  auto& chainman = EnsureChainman (EnsureAnyNodeContext (request));
 
-  if (::ChainstateActive ().IsInitialBlockDownload ())
+  if (chainman.ActiveChainstate ().IsInitialBlockDownload ())
     throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD,
                        "Doichain is downloading blocks...");
 
@@ -482,7 +520,7 @@ name_show ()
     },
     true, false);
 
-  bool allow_expired = allow_expired_default;
+  bool allow_expired = gArgs.GetBoolArg("-allowexpired", DEFAULT_ALLOWEXPIRED);
   if (options.exists("allowExpired"))
     allow_expired = options["allowExpired"].get_bool();
 
@@ -491,23 +529,23 @@ name_show ()
   CNameData data;
   {
     LOCK (cs_main);
-    if (!::ChainstateActive ().CoinsTip ().GetName (name, data))
+    if (!chainman.ActiveChainstate ().CoinsTip ().GetName (name, data))
       {
         std::ostringstream msg;
-        msg << "name not found: " << EncodeNameForMessage (name);
+        msg << "name never existed: " << EncodeNameForMessage (name);
         throw JSONRPCError (RPC_WALLET_ERROR, msg.str ());
       }
   }
 
   MaybeWalletForRequest wallet(request);
   LOCK2 (wallet.getLock (), cs_main);
-  UniValue name_object = getNameInfo(options, name, data, wallet);
+  UniValue name_object = getNameInfo(chainman, options, name, data, wallet);
   assert(!name_object["expired"].isNull());
   const bool is_expired = name_object["expired"].get_bool();
   if (is_expired && !allow_expired)
     {
       std::ostringstream msg;
-      msg << "name not found: " << EncodeNameForMessage(name);
+      msg << "name expired: " << EncodeNameForMessage(name);
       throw JSONRPCError(RPC_WALLET_ERROR, msg.str());
     }
   return name_object;
@@ -546,11 +584,12 @@ name_history ()
       [&] (const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
   RPCTypeCheck (request.params, {UniValue::VSTR, UniValue::VOBJ});
+  auto& chainman = EnsureChainman (EnsureAnyNodeContext (request));
 
   if (!fNameHistory)
     throw std::runtime_error ("-namehistory is not enabled");
 
-  if (::ChainstateActive ().IsInitialBlockDownload ())
+  if (chainman.ActiveChainstate ().IsInitialBlockDownload ())
     throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD,
                        "Doichain is downloading blocks...");
 
@@ -566,7 +605,7 @@ name_history ()
   {
     LOCK (cs_main);
 
-    const auto& coinsTip = ::ChainstateActive ().CoinsTip ();
+    const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
     if (!coinsTip.GetName (name, data))
       {
         std::ostringstream msg;
@@ -583,8 +622,8 @@ name_history ()
 
   UniValue res(UniValue::VARR);
   for (const auto& entry : history.getData ())
-    res.push_back (getNameInfo (options, name, entry, wallet));
-  res.push_back (getNameInfo (options, name, data, wallet));
+    res.push_back (getNameInfo (chainman, options, name, entry, wallet));
+  res.push_back (getNameInfo (chainman, options, name, data, wallet));
 
   return res;
 }
@@ -612,8 +651,8 @@ name_scan ()
   return RPCHelpMan ("name_scan",
       "\nLists names in the database.\n",
       {
-          {"start", RPCArg::Type::STR, "", "Skip initially to this name"},
-          {"count", RPCArg::Type::NUM, "500", "Stop after this many names"},
+          {"start", RPCArg::Type::STR, RPCArg::Default{""}, "Skip initially to this name"},
+          {"count", RPCArg::Type::NUM, RPCArg::Default{500}, "Stop after this many names"},
           optHelp.buildRpcArg (),
       },
       RPCResult {RPCResult::Type::ARR, "", "",
@@ -633,8 +672,9 @@ name_scan ()
 {
   RPCTypeCheck (request.params,
                 {UniValue::VSTR, UniValue::VNUM, UniValue::VOBJ});
+  auto& chainman = EnsureChainman (EnsureAnyNodeContext (request));
 
-  if (::ChainstateActive ().IsInitialBlockDownload ())
+  if (chainman.ActiveChainstate ().IsInitialBlockDownload ())
     throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD,
                        "Doichain is downloading blocks...");
 
@@ -643,11 +683,11 @@ name_scan ()
     options = request.params[2].get_obj ();
 
   valtype start;
-  if (request.params.size () >= 1)
+  if (!request.params[0].isNull ())
     start = DecodeNameFromRPCOrThrow (request.params[0], options);
 
   int count = 500;
-  if (request.params.size () >= 2)
+  if (!request.params[1].isNull ())
     count = request.params[1].get_int ();
 
   /* Parse and interpret the name_scan-specific options.  */
@@ -695,14 +735,14 @@ name_scan ()
   MaybeWalletForRequest wallet(request);
   LOCK2 (wallet.getLock (), cs_main);
 
-  const int maxHeight = ::ChainActive ().Height () - minConf + 1;
+  const int maxHeight = chainman.ActiveHeight () - minConf + 1;
   int minHeight = -1;
   if (maxConf >= 0)
-    minHeight = ::ChainActive ().Height () - maxConf + 1;
+    minHeight = chainman.ActiveHeight () - maxConf + 1;
 
   valtype name;
   CNameData data;
-  const auto& coinsTip = ::ChainstateActive ().CoinsTip ();
+  const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
   std::unique_ptr<CNameIterator> iter(coinsTip.IterateNames ());
   for (iter->seek (start); count > 0 && iter->next (name, data); )
     {
@@ -732,7 +772,7 @@ name_scan ()
             }
         }
 
-      res.push_back (getNameInfo (options, name, data, wallet));
+      res.push_back (getNameInfo (chainman, options, name, data, wallet));
       --count;
     }
 
@@ -776,7 +816,7 @@ name_pending ()
   RPCTypeCheck (request.params, {UniValue::VSTR, UniValue::VOBJ}, true);
 
   MaybeWalletForRequest wallet(request);
-  auto& mempool = EnsureMemPool (request.context);
+  auto& mempool = EnsureMemPool (EnsureAnyNodeContext (request));
   LOCK2 (wallet.getLock (), mempool.cs);
 
   UniValue options(UniValue::VOBJ);
@@ -850,12 +890,12 @@ namespace
  * into the JSON output "result" already.
  */
 void
-PerformNameRawtx (const int nOut, const UniValue& nameOp,
+PerformNameRawtx (const unsigned nOut, const UniValue& nameOp,
                   CMutableTransaction& mtx, UniValue& result)
 {
   mtx.SetDoichain ();
 
-  if (nOut < 0 || nOut >= mtx.vout.size ())
+  if (nOut >= mtx.vout.size ())
     throw JSONRPCError (RPC_INVALID_PARAMETER, "vout is out of range");
   auto& script = mtx.vout[nOut].scriptPubKey;
 
@@ -1062,7 +1102,6 @@ namepsbt ()
 
   CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
   ssTx << psbtx;
-  const auto* data = reinterpret_cast<const unsigned char*> (ssTx.data ());
   result.pushKV ("psbt", EncodeBase64 (MakeUCharSpan (ssTx)));
 
   return result;
@@ -1086,11 +1125,14 @@ name_checkdb ()
       },
       [&] (const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-  ChainstateManager& chainman = EnsureChainman (request.context);
+  NodeContext& node = EnsureAnyNodeContext (request);
+  ChainstateManager& chainman = EnsureChainman (node);
+
   LOCK (cs_main);
   auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
   coinsTip.Flush ();
-  return coinsTip.ValidateNameDB (chainman);
+  return coinsTip.ValidateNameDB (chainman.ActiveChainstate (),
+                                  node.rpc_interruption_point);
 }
   );
 }
@@ -1098,20 +1140,25 @@ name_checkdb ()
 } // namespace
 /* ************************************************************************** */
 
-void RegisterNameRPCCommands(CRPCTable &t)
+Span<const CRPCCommand> GetNameRPCCommands()
 {
 static const CRPCCommand commands[] =
-{ //  category              name                      actor (function)         argNames
-  //  --------------------- ------------------------  -----------------------  ----------
-    { "names",              "name_show",              &name_show,              {"name", "options"} },
-    { "names",              "name_history",           &name_history,           {"name", "options"} },
-    { "names",              "name_scan",              &name_scan,              {"start", "count", "options"} },
-    { "names",              "name_pending",           &name_pending,           {"name", "options"} },
-    { "names",              "name_checkdb",           &name_checkdb,           {} },
-    { "rawtransactions",    "namerawtransaction",     &namerawtransaction,     {"hexstring", "vout", "nameop"} },
-    { "rawtransactions",    "namepsbt",               &namepsbt,               {"psbt", "vout", "nameop"} },
+{ //  category               actor (function)
+  //  ---------------------  -----------------------
+    { "names",               &name_show,               },
+    { "names",               &name_history,            },
+    { "names",               &name_scan,               },
+    { "names",               &name_pending,            },
+    { "names",               &name_checkdb,            },
+    { "rawtransactions",     &namerawtransaction,      },
+    { "rawtransactions",     &namepsbt,                },
 };
 
-    for (unsigned int vcidx = 0; vcidx < ARRAYLEN(commands); vcidx++)
-        t.appendCommand(commands[vcidx].name, &commands[vcidx]);
+  return Span {commands};
+}
+
+void RegisterNameRPCCommands(CRPCTable &t)
+{
+  for (const auto& c : GetNameRPCCommands ())
+    t.appendCommand(c.name, &c);
 }

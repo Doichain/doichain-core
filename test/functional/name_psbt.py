@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2020 Daniel Kraft
+# Copyright (c) 2020-2021 Daniel Kraft
 # Distributed under the MIT/X11 software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -22,19 +22,19 @@ class NamePsbtTest (NameTestFramework):
     newOp = {"op": "name_new", "name": "d/my-name"}
     newAddr = self.nodes[0].getnewaddress ()
     newOutp, newData = self.rawNameOp (0, None, newAddr, newOp)
-    self.nodes[0].generate (10)
+    self.generate (self.nodes[0], 10)
 
     firstOp = {"op": "name_firstupdate", "rand": newData["rand"],
                "name": "d/my-name", "value": "first value"}
     firstAddr = self.nodes[0].getnewaddress ()
     firstOutp, firstData = self.rawNameOp (0, newOutp, firstAddr, firstOp)
-    self.nodes[0].generate (5)
+    self.generate (self.nodes[0], 5)
     self.checkName (0, "d/my-name", "first value", None, False)
 
     updOp = {"op": "name_update", "name": "d/my-name", "value": "new value"}
     updAddr = self.nodes[0].getnewaddress ()
     _, updData = self.rawNameOp (0, firstOutp, updAddr, updOp)
-    self.nodes[0].generate (1)
+    self.generate (self.nodes[0], 1)
     self.checkName (0, "d/my-name", "new value", None, False)
 
     # Decode the name_new.
@@ -77,10 +77,9 @@ class NamePsbtTest (NameTestFramework):
         res = out["scriptPubKey"]["nameOp"]
 
         # Extra check:  Verify that the address is decoded correctly.
-        addr = out["scriptPubKey"]["addresses"]
+        addr = out["scriptPubKey"]["address"]
         assert_equal (out["scriptPubKey"]["type"], "pubkeyhash")
-        assert_equal (len (addr), 1)
-        validation = node.validateaddress (addr[0])
+        validation = node.validateaddress (addr)
         assert_equal (validation["isvalid"], True)
 
     assert res is not None

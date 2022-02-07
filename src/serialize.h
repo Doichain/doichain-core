@@ -24,7 +24,11 @@
 #include <prevector.h>
 #include <span.h>
 
-static const unsigned int MAX_SIZE = 0x02000000;
+/**
+ * The maximum size of a serialized object in bytes or number of elements
+ * (for eg vectors) when the size is encoded as CompactSize.
+ */
+static constexpr uint64_t MAX_SIZE = 0x02000000;
 
 /** Maximum amount of memory (in bytes) to allocate at once when deserializing vectors. */
 static const unsigned int MAX_VECTOR_ALLOCATE = 5000000;
@@ -118,34 +122,6 @@ template<typename Stream> inline uint64_t ser_readdata64(Stream &s)
     s.read((char*)&obj, 8);
     return le64toh(obj);
 }
-inline uint64_t ser_double_to_uint64(double x)
-{
-    uint64_t tmp;
-    std::memcpy(&tmp, &x, sizeof(x));
-    static_assert(sizeof(tmp) == sizeof(x), "double and uint64_t assumed to have the same size");
-    return tmp;
-}
-inline uint32_t ser_float_to_uint32(float x)
-{
-    uint32_t tmp;
-    std::memcpy(&tmp, &x, sizeof(x));
-    static_assert(sizeof(tmp) == sizeof(x), "float and uint32_t assumed to have the same size");
-    return tmp;
-}
-inline double ser_uint64_to_double(uint64_t y)
-{
-    double tmp;
-    std::memcpy(&tmp, &y, sizeof(y));
-    static_assert(sizeof(tmp) == sizeof(y), "double and uint64_t assumed to have the same size");
-    return tmp;
-}
-inline float ser_uint32_to_float(uint32_t y)
-{
-    float tmp;
-    std::memcpy(&tmp, &y, sizeof(y));
-    static_assert(sizeof(tmp) == sizeof(y), "float and uint32_t assumed to have the same size");
-    return tmp;
-}
 
 
 /////////////////////////////////////////////////////////////////
@@ -230,8 +206,6 @@ template<typename Stream> inline void Serialize(Stream& s, int32_t a ) { ser_wri
 template<typename Stream> inline void Serialize(Stream& s, uint32_t a) { ser_writedata32(s, a); }
 template<typename Stream> inline void Serialize(Stream& s, int64_t a ) { ser_writedata64(s, a); }
 template<typename Stream> inline void Serialize(Stream& s, uint64_t a) { ser_writedata64(s, a); }
-template<typename Stream> inline void Serialize(Stream& s, float a   ) { ser_writedata32(s, ser_float_to_uint32(a)); }
-template<typename Stream> inline void Serialize(Stream& s, double a  ) { ser_writedata64(s, ser_double_to_uint64(a)); }
 template<typename Stream, int N> inline void Serialize(Stream& s, const char (&a)[N]) { s.write(a, N); }
 template<typename Stream, int N> inline void Serialize(Stream& s, const unsigned char (&a)[N]) { s.write(CharCast(a), N); }
 template<typename Stream> inline void Serialize(Stream& s, const Span<const unsigned char>& span) { s.write(CharCast(span.data()), span.size()); }
@@ -248,18 +222,12 @@ template<typename Stream> inline void Unserialize(Stream& s, int32_t& a ) { a = 
 template<typename Stream> inline void Unserialize(Stream& s, uint32_t& a) { a = ser_readdata32(s); }
 template<typename Stream> inline void Unserialize(Stream& s, int64_t& a ) { a = ser_readdata64(s); }
 template<typename Stream> inline void Unserialize(Stream& s, uint64_t& a) { a = ser_readdata64(s); }
-template<typename Stream> inline void Unserialize(Stream& s, float& a   ) { a = ser_uint32_to_float(ser_readdata32(s)); }
-template<typename Stream> inline void Unserialize(Stream& s, double& a  ) { a = ser_uint64_to_double(ser_readdata64(s)); }
 template<typename Stream, int N> inline void Unserialize(Stream& s, char (&a)[N]) { s.read(a, N); }
 template<typename Stream, int N> inline void Unserialize(Stream& s, unsigned char (&a)[N]) { s.read(CharCast(a), N); }
 template<typename Stream> inline void Unserialize(Stream& s, Span<unsigned char>& span) { s.read(CharCast(span.data()), span.size()); }
 
-template<typename Stream> inline void Serialize(Stream& s, bool a)    { char f=a; ser_writedata8(s, f); }
-template<typename Stream> inline void Unserialize(Stream& s, bool& a) { char f=ser_readdata8(s); a=f; }
-
-
-
-
+template <typename Stream> inline void Serialize(Stream& s, bool a) { uint8_t f = a; ser_writedata8(s, f); }
+template <typename Stream> inline void Unserialize(Stream& s, bool& a) { uint8_t f = ser_readdata8(s); a = f; }
 
 
 /**
@@ -304,8 +272,14 @@ void WriteCompactSize(Stream& os, uint64_t nSize)
     return;
 }
 
+/**
+ * Decode a CompactSize-encoded variable-length integer.
+ *
+ * As these are primarily used to encode the size of vector-like serializations, by default a range
+ * check is performed. When used as a generic number encoding, range_check should be set to false.
+ */
 template<typename Stream>
-uint64_t ReadCompactSize(Stream& is)
+uint64_t ReadCompactSize(Stream& is, bool range_check = true)
 {
     uint8_t chSize = ser_readdata8(is);
     uint64_t nSizeRet = 0;
@@ -331,8 +305,9 @@ uint64_t ReadCompactSize(Stream& is)
         if (nSizeRet < 0x100000000ULL)
             throw std::ios_base::failure("non-canonical ReadCompactSize()");
     }
-    if (nSizeRet > (uint64_t)MAX_SIZE)
+    if (range_check && nSizeRet > MAX_SIZE) {
         throw std::ios_base::failure("ReadCompactSize(): size too large");
+    }
     return nSizeRet;
 }
 
@@ -466,7 +441,7 @@ static inline Wrapper<Formatter, T&> Using(T&& t) { return Wrapper<Formatter, T&
 
 #define VARINT_MODE(obj, mode) Using<VarIntFormatter<mode>>(obj)
 #define VARINT(obj) Using<VarIntFormatter<VarIntMode::DEFAULT>>(obj)
-#define COMPACTSIZE(obj) Using<CompactSizeFormatter>(obj)
+#define COMPACTSIZE(obj) Using<CompactSizeFormatter<true>>(obj)
 #define LIMITED_STRING(obj,n) Using<LimitedStringFormatter<n>>(obj)
 
 /** Serialization wrapper class for integers in VarInt format. */
@@ -529,12 +504,13 @@ struct CustomUintFormatter
 template<int Bytes> using BigEndianFormatter = CustomUintFormatter<Bytes, true>;
 
 /** Formatter for integers in CompactSize format. */
+template<bool RangeCheck>
 struct CompactSizeFormatter
 {
     template<typename Stream, typename I>
     void Unser(Stream& s, I& v)
     {
-        uint64_t n = ReadCompactSize<Stream>(s);
+        uint64_t n = ReadCompactSize<Stream>(s, RangeCheck);
         if (n < std::numeric_limits<I>::min() || n > std::numeric_limits<I>::max()) {
             throw std::ios_base::failure("CompactSize exceeds limit of type");
         }
@@ -548,6 +524,19 @@ struct CompactSizeFormatter
         static_assert(std::numeric_limits<I>::max() <= std::numeric_limits<uint64_t>::max(), "CompactSize only supports 64-bit integers and below");
 
         WriteCompactSize<Stream>(s, v);
+    }
+};
+
+class CompactSizeWriter
+{
+protected:
+    uint64_t n;
+public:
+    explicit CompactSizeWriter(uint64_t n_in) : n(n_in) { }
+
+    template<typename Stream>
+    void Serialize(Stream &s) const {
+        WriteCompactSize<Stream>(s, n);
     }
 };
 

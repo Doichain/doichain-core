@@ -1,10 +1,11 @@
-// Copyright (c) 2019 Daniel Kraft
+// Copyright (c) 2019-2021 Daniel Kraft
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <index/namehash.h>
 
 #include <hash.h>
+#include <primitives/block.h>
 #include <script/names.h>
 
 #include <utility>
@@ -19,7 +20,7 @@ class NameHashIndex::DB : public BaseIndex::DB
 public:
 
   explicit DB (const size_t cache_size, const bool memory, const bool wipe)
-    : BaseIndex::DB (GetDataDir () / "indexes" / "namehash",
+    : BaseIndex::DB (gArgs.GetDataDirNet () / "indexes" / "namehash",
                      cache_size, memory, wipe)
   {}
 
@@ -46,7 +47,7 @@ NameHashIndex::DB::WritePreimages (
 
 NameHashIndex::NameHashIndex (const size_t cache_size, const bool memory,
                               const bool wipe)
-  : db(MakeUnique<NameHashIndex::DB> (cache_size, memory, wipe))
+  : db(std::make_unique<NameHashIndex::DB> (cache_size, memory, wipe))
 {}
 
 NameHashIndex::~NameHashIndex () = default;

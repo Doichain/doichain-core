@@ -106,12 +106,6 @@ public:
   }
 
   /**
-   * Check if the name is expired at the current chain height.
-   * @return True iff the name is expired.
-   */
-  bool isExpired () const;
-
-  /**
    * Check if the name is expired at the given height.
    * @param h The height at which to check.
    * @return True iff the name is expired at height h.
@@ -214,14 +208,11 @@ public:
 
   /**
    * Seek to a given lower bound.
-   * @param start The name to seek to.
    */
   virtual void seek (const valtype& name) = 0;
 
   /**
    * Get the next name.  Returns false if no more names are available.
-   * @param name Put the name here.
-   * @param data Put the name's data here.
    * @return True if successful, false if no more names.
    */
   virtual bool next (valtype& name, CNameData& data) = 0;

@@ -19,7 +19,9 @@ void RegisterMiscRPCCommands(CRPCTable &tableRPC);
 void RegisterMiningRPCCommands(CRPCTable &tableRPC);
 /** Register raw transaction RPC commands */
 void RegisterRawTransactionRPCCommands(CRPCTable &tableRPC);
-/** Register Doichain RPC commands */
+/** Register raw transaction RPC commands */
+void RegisterSignerRPCCommands(CRPCTable &tableRPC);
+/** Register Namecoin RPC commands */
 void RegisterNameRPCCommands(CRPCTable &tableRPC);
 
 static inline void RegisterAllCoreRPCCommands(CRPCTable &t)
@@ -29,7 +31,9 @@ static inline void RegisterAllCoreRPCCommands(CRPCTable &t)
     RegisterMiscRPCCommands(t);
     RegisterMiningRPCCommands(t);
     RegisterRawTransactionRPCCommands(t);
-    RegisterNameRPCCommands(t);
+#ifdef ENABLE_EXTERNAL_SIGNER
+    RegisterSignerRPCCommands(t);
+#endif // ENABLE_EXTERNAL_SIGNER
 }
 
 #endif // BITCOIN_RPC_REGISTER_H

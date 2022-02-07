@@ -44,7 +44,7 @@ The following are developer notes on how to build Bitcoin Core on your native pl
 - [FreeBSD Build Notes](build-freebsd.md)
 - [OpenBSD Build Notes](build-openbsd.md)
 - [NetBSD Build Notes](build-netbsd.md)
-- [Gitian Building Guide (External Link)](https://github.com/bitcoin-core/docs/blob/master/gitian-building.md)
+- [Android Build Notes](build-android.md)
 
 Development
 ---------------------
@@ -70,15 +70,18 @@ The Doichain repo's [root README](https://github.com/doichain/namecore/blob/mast
 
 ### Miscellaneous
 - [Assets Attribution](assets-attribution.md)
+- [Assumeutxo design](assumeutxo.md)
 - [bitcoin.conf Configuration File](bitcoin-conf.md)
 - [Files](files.md)
 - [Fuzz-testing](fuzzing.md)
+- [I2P Support](i2p.md)
+- [Init Scripts (systemd/upstart/openrc)](init.md)
+- [Managing Wallets](managing-wallets.md)
+- [PSBT support](psbt.md)
 - [Reduce Memory](reduce-memory.md)
 - [Reduce Traffic](reduce-traffic.md)
 - [Tor Support](tor.md)
-- [Init Scripts (systemd/upstart/openrc)](init.md)
 - [ZMQ](zmq.md)
-- [PSBT support](psbt.md)
 
 License
 ---------------------

@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2019 Daniel Kraft
+// Copyright (c) 2014-2021 Daniel Kraft
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -322,15 +322,15 @@ BOOST_FIXTURE_TEST_CASE (mempool_sanity_check, NameMempoolTestSetup)
   mempool.addUnchecked (Entry (Tx (UpdateScript (ADDR, "upd", "x"))));
   mempool.addUnchecked (Entry (Tx (UpdateScript (ADDR, "upd", "y"))));
 
-  ChainstateManager& chainman = g_chainman;
-  CCoinsViewCache view(&chainman.ActiveChainstate ().CoinsTip ());
+  auto& chainState = m_node.chainman->ActiveChainstate ();
+  auto& view = chainState.CoinsTip ();
 
   const CNameScript nameOp(UpdateScript (ADDR, "upd", "o"));
   CNameData data;
   data.fromScript (100, COutPoint (uint256 (), 0), nameOp);
   view.SetName (Name ("upd"), data, false);
 
-  mempool.checkNames (chainman, &view);
+  mempool.checkNames (view, 10);
 }
 
 namespace
@@ -362,7 +362,8 @@ public:
 
   void
   TransactionRemovedFromMempool (const CTransactionRef& ptxn,
-                                 const MemPoolRemovalReason reason) override
+                                 const MemPoolRemovalReason reason,
+                                 const uint64_t sequence) override
   {
     txids.push_back (ptxn->GetHash ());
   }

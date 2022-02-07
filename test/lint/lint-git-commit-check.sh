@@ -27,6 +27,7 @@ if [ -z "${COMMIT_RANGE}" ]; then
     if [ -n "$1" ]; then
       COMMIT_RANGE="HEAD~$1...HEAD"
     else
+      # This assumes that the target branch of the pull request will be master.
       MERGE_BASE=$(git merge-base HEAD master)
       COMMIT_RANGE="$MERGE_BASE..HEAD"
     fi
@@ -37,7 +38,7 @@ while IFS= read -r commit_hash  || [[ -n "$commit_hash" ]]; do
     while IFS= read -r line || [[ -n "$line" ]]; do
         n_line=$((n_line+1))
         length=${#line}
-        if [ $n_line -eq 2 ] && [ $length -ne 0 ]; then
+        if [ $n_line -eq 2 ] && [ "$length" -ne 0 ]; then
             echo "The subject line of commit hash ${commit_hash} is followed by a non-empty line. Subject lines should always be followed by a blank line."
             EXIT_CODE=1
         fi

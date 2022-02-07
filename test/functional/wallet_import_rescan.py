@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-2019 The Bitcoin Core developers
+# Copyright (c) 2014-2021 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test wallet import RPCs.
@@ -22,7 +22,6 @@ happened previously.
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.address import AddressType
 from test_framework.util import (
-    connect_nodes,
     assert_equal,
     set_node_times,
 )
@@ -100,7 +99,7 @@ class Variant(collections.namedtuple("Variant", "call data address_type rescan p
             assert_equal(tx["label"], self.label)
             assert_equal(tx["txid"], txid)
             assert_equal(tx["confirmations"], 1 + current_height - confirmation_height)
-            assert_equal("trusted" not in tx, True)
+            assert "trusted" not in tx
 
             address, = [ad for ad in addresses if txid in ad["txids"]]
             assert_equal(address["address"], self.address["address"])
@@ -151,7 +150,7 @@ class ImportRescanTest(BitcoinTestFramework):
         self.skip_if_no_wallet()
 
     def setup_network(self):
-        self.extra_args = [["-wallet="] for _ in range(self.num_nodes)]
+        self.extra_args = [[] for _ in range(self.num_nodes)]
         for i, import_node in enumerate(IMPORT_NODES, 2):
             if import_node.prune:
                 self.extra_args[i] += ["-prune=1"]
@@ -159,14 +158,13 @@ class ImportRescanTest(BitcoinTestFramework):
         self.add_nodes(self.num_nodes, extra_args=self.extra_args)
 
         # Import keys with pruning disabled
-        self.start_nodes(extra_args=[["-wallet="]] * self.num_nodes)
-        for n in self.nodes:
-            n.importprivkey(privkey=n.get_deterministic_priv_key().key, label='coinbase')
+        self.start_nodes(extra_args=[[]] * self.num_nodes)
+        self.import_deterministic_coinbase_privkeys()
         self.stop_nodes()
 
         self.start_nodes()
         for i in range(1, self.num_nodes):
-            connect_nodes(self.nodes[i], 0)
+            self.connect_nodes(i, 0)
 
     def run_test(self):
         # Create one transaction on node 0 with a unique amount for
@@ -180,7 +178,7 @@ class ImportRescanTest(BitcoinTestFramework):
             variant.key = self.nodes[1].dumpprivkey(variant.address["address"])
             variant.initial_amount = get_rand_amount()
             variant.initial_txid = self.nodes[0].sendtoaddress(variant.address["address"], variant.initial_amount)
-            self.nodes[0].generate(1)  # Generate one block for each send
+            self.generate(self.nodes[0], 1)  # Generate one block for each send
             variant.confirmation_height = self.nodes[0].getblockcount()
             variant.timestamp = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())["time"]
 
@@ -190,8 +188,7 @@ class ImportRescanTest(BitcoinTestFramework):
             self.nodes,
             self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())["time"] + TIMESTAMP_WINDOW + 1,
         )
-        self.nodes[0].generate(1)
-        self.sync_all()
+        self.generate(self.nodes[0], 1)
 
         # For each variation of wallet key import, invoke the import RPC and
         # check the results from getbalance and listtransactions.
@@ -213,7 +210,7 @@ class ImportRescanTest(BitcoinTestFramework):
         for i, variant in enumerate(IMPORT_VARIANTS):
             variant.sent_amount = get_rand_amount()
             variant.sent_txid = self.nodes[0].sendtoaddress(variant.address["address"], variant.sent_amount)
-            self.nodes[0].generate(1)  # Generate one block for each send
+            self.generate(self.nodes[0], 1)  # Generate one block for each send
             variant.confirmation_height = self.nodes[0].getblockcount()
 
         assert_equal(self.nodes[0].getrawmempool(), [])

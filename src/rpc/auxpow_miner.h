@@ -5,7 +5,7 @@
 #ifndef BITCOIN_RPC_AUXPOW_MINER_H
 #define BITCOIN_RPC_AUXPOW_MINER_H
 
-#include <miner.h>
+#include <node/miner.h>
 #include <rpc/request.h>
 #include <script/script.h>
 #include <script/standard.h>
@@ -18,6 +18,8 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+class ChainstateManager;
 
 namespace auxpow_tests
 {
@@ -60,14 +62,17 @@ private:
    * that should be returned to a miner for working on at the moment.  Also
    * fills in the difficulty target value.
    */
-  const CBlock* getCurrentBlock (const CTxMemPool& mempool,
-                                 const CScript& scriptPubKey, uint256& target);
+  const CBlock* getCurrentBlock (const ChainstateManager& chainman,
+                                 const CTxMemPool& mempool,
+                                 const CScript& scriptPubKey, uint256& target)
+      EXCLUSIVE_LOCKS_REQUIRED (cs);
 
   /**
    * Looks up a previously constructed block by its (hex-encoded) hash.  If the
    * block is found, it is returned.  Otherwise, a JSONRPCError is thrown.
    */
-  const CBlock* lookupSavedBlock (const std::string& hashHex) const;
+  const CBlock* lookupSavedBlock (const std::string& hashHex) const
+      EXCLUSIVE_LOCKS_REQUIRED (cs);
 
   friend class auxpow_tests::AuxpowMinerForTest;
 

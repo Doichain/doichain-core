@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2018-2020 Daniel Kraft
+# Copyright (c) 2018-2021 Daniel Kraft
 # Distributed under the MIT/X11 software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """RPC test for the "sendCoins" option with name operations."""
@@ -29,9 +29,7 @@ class NameSendCoinsTest (NameTestFramework):
     for out in vout:
       if 'nameOp' in out['scriptPubKey']:
         continue
-      addr = out['scriptPubKey']['addresses']
-      assert_equal (len (addr), 1)
-      addr = addr[0]
+      addr = out['scriptPubKey']['address']
       if not addr in expected:
         # This must be the change address.  Through the assertion above about
         # the expected sizes, we make sure that the test fails if there is
@@ -48,13 +46,13 @@ class NameSendCoinsTest (NameTestFramework):
     addr2 = self.nodes[0].getnewaddress ()
     sendCoins = {addr1: 1, addr2: 2}
     new = self.nodes[0].name_new ("testname", {"sendCoins": sendCoins})
-    self.nodes[0].generate (10)
+    self.generate (self.nodes[0], 10)
     self.verifyTx (new[0], sendCoins)
 
     # Check that it also works with first_update.
     txid = self.firstupdateName (0, "testname", new, "value",
                                  {"sendCoins": sendCoins})
-    self.nodes[0].generate (5)
+    self.generate (self.nodes[0], 5)
     self.verifyTx (txid, sendCoins)
 
     # Test different variations (numbers of target addresses) with name_update.
@@ -62,7 +60,7 @@ class NameSendCoinsTest (NameTestFramework):
       sendCoins = {self.nodes[0].getnewaddress (): 42 + i for i in range (n)}
       txid = self.nodes[0].name_update ("testname", "value",
                                        {"sendCoins": sendCoins})
-      self.nodes[0].generate (1)
+      self.generate (self.nodes[0], 1)
       self.verifyTx (txid, sendCoins)
 
     # Verify the range check for amount and the address validation.
@@ -92,7 +90,7 @@ class NameSendCoinsTest (NameTestFramework):
     sendCoins = {addr1: balance - keep}
     txid = self.nodes[0].name_update ("testname", "value",
                                       {"sendCoins": sendCoins})
-    self.nodes[0].generate (1)
+    self.generate (self.nodes[0], 1)
     self.verifyTx (txid, sendCoins)
 
 
