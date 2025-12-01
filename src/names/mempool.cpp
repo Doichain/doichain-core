@@ -149,7 +149,6 @@ void
 CNameMemPool::addUnchecked (const CTxMemPoolEntry& entry)
 {
   AssertLockHeld (pool.cs);
-    LogPrintf("CNameMemPool:addUnchecked\n");
   const uint256& txHash = entry.GetTx ().GetHash ();
   if (entry.isNameNew ())
     {

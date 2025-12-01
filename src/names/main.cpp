@@ -102,7 +102,6 @@ CheckNameTransaction (const CTransaction& tx, unsigned nHeight,
   /* As a first step, try to locate inputs and outputs of the transaction
      that are name scripts.  At most one input and output should be
      a name operation.  */
-  LogPrintf ("CheckNameTransaction: Checking Inputs - 0\n");
   int nameIn = -1;
   CNameScript nameOpIn;
   Coin coinIn;
@@ -127,7 +126,6 @@ CheckNameTransaction (const CTransaction& tx, unsigned nHeight,
           coinIn = coin;
         }
     }
-  LogPrintf ("CheckNameTransaction: Checking Outputs - 1\n");
   int nameOut = -1;
   CNameScript nameOpOut;
   for (unsigned i = 0; i < tx.vout.size (); ++i)
@@ -160,7 +158,6 @@ CheckNameTransaction (const CTransaction& tx, unsigned nHeight,
                               "Non-name transaction has name output");
       return true;
     }
-  LogPrintf ("CheckNameTransaction Step 2\n");
   assert (tx.IsDoichain ());
   if (nameOut == -1)
     return state.Invalid (TxValidationResult::TX_CONSENSUS,
@@ -194,13 +191,7 @@ CheckNameTransaction (const CTransaction& tx, unsigned nHeight,
 
   /* Now that we have ruled out NAME_NEW, check that we have a previous
      name input that is being updated.  */
-  LogPrintf ("CheckNameTransaction Step 3\n");
   assert (nameOpOut.isAnyUpdate () || nameOpOut.isDoiRegistration ());
-  //TODO invalid block=1173d2615de4aba9785646bc414040e622cc04869593f006872b9013e1b1201b  height=29966 mainnet why is that
-  /*if (nameIn == -1) 
-    return state.Invalid (TxValidationResult::TX_CONSENSUS,
-                          "tx-nameupdate-without-name-input",
-                          "Name update has no previous name input"); */
   const valtype& name = nameOpOut.getOpName ();
 
   if (name.size () > MAX_NAME_LENGTH)
@@ -213,7 +204,6 @@ CheckNameTransaction (const CTransaction& tx, unsigned nHeight,
                           "Invalid value");
 
   /* Process NAME_UPDATE next.  */
-  LogPrintf ("CheckNameTransaction Step 4\n");
   if (nameOpOut.getNameOp () == OP_NAME_UPDATE)
     {
       if (!nameOpIn.isAnyUpdate ())
@@ -249,11 +239,9 @@ CheckNameTransaction (const CTransaction& tx, unsigned nHeight,
 
       return true;
     }
-  LogPrintf ("CheckNameTransaction Step 5\n");
   if (nameOpOut.getNameOp () == OP_NAME_DOI)
     {
 	   if (nameIn != -1){
-		   LogPrintf ("this OP_NAME_DOI WITH previous name input !\n");
 		      CNameData oldName;
 		      if (!view.GetName (name, oldName))
 		        return state.Invalid (TxValidationResult::TX_CONSENSUS,
@@ -267,7 +255,6 @@ CheckNameTransaction (const CTransaction& tx, unsigned nHeight,
 	   }else{ 
        //here we create a new name_doi in case it is a not used nameId and MAYBE even if it is a used nameId (need to check!)
        //in case it is an already used nameId we need to 
-       LogPrintf ("this OP_NAME_DOI WITHOUT previous name input !\n");
        CNameData oldName;
        CTxDestination destOld;
        std::string addrStrOld;
@@ -278,45 +265,22 @@ CheckNameTransaction (const CTransaction& tx, unsigned nHeight,
 
   	       if (ExtractDestination (oldName.getAddress(), destOld)){
     			addrStrOld = EncodeDestination (destOld);
-               		LogPrintf ("oldName: %s\n",  addrStrOld);
 	       }
 
   	       if (ExtractDestination (nameOpOut.getAddress(), destNew)){
     			addrStrNew = EncodeDestination (destNew);
-               		LogPrintf ("newName: %s\n",  addrStrNew);
 	       }
 
               //if(strcmp(addrStrNew,addrStrOld)){
               //if(addrStrNew!=addrStrOld){ //problem is here that most name_dois have a new destination after overwrite
               if(inHeight>170000){ //blockheight were we do not except name_doi overwriting anymore
-                LogPrintf("this OP_NAME_DOI already exists and cannot be overwritten!\n");
                 return state.Invalid(TxValidationResult::TX_CONSENSUS,
                                    "tx-name-doi-name-used",
                                    "NAME_DOI name is already used - please use correct inputs if its an name_doi update");
               }
        }
-      LogPrintf ("this OP_NAME_DOI does not yet exists planing to add it !\n");
-      /*const unsigned inHeight = coinIn.nHeight;
-		  if (inHeight == MEMPOOL_HEIGHT)
-		       return true;
-
-		   assert (inHeight == oldName.getHeight ());
-		   assert (tx.vin[nameIn].prevout == oldName.getUpdateOutpoint ()); */
 
        return true;
-		 /* 
-		   LogPrintf ("this OP_NAME_DOI WITHOUT previous name input no check needed here!\n");
-
-		  CNameData oldName;
-		  if (!view.GetName (name, oldName))
-			return state.Invalid (TxValidationResult::TX_CONSENSUS,
-								  "tx-nameupdate-nonexistant",
-								  "OP_NAME_DOI name does not exist");
-
-	      if (oldName.isExpired (nHeight))
-	        return state.Invalid (TxValidationResult::TX_CONSENSUS,
-	                              "tx-nameupdate-expired",
-	                              "OP_NAME_DOI on an expired name");*/
 	   }
 
       return true;      
@@ -354,7 +318,6 @@ CheckNameTransaction (const CTransaction& tx, unsigned nHeight,
                             "tx-firstupdate-hash-mismatch",
                             "NAME_FIRSTUPDATE mismatch in hash / rand value");
   }
-  LogPrintf ("CheckNameTransaction Step 6\n");
   CNameData oldName;
   if (view.GetName (name, oldName) && !oldName.isExpired (nHeight))
     return state.Invalid (TxValidationResult::TX_CONSENSUS,
