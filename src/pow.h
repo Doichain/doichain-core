@@ -29,6 +29,12 @@ std::optional<arith_uint256> DeriveTarget(unsigned int nBits, uint256 pow_limit)
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params&);
 unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nFirstBlockTime, const Consensus::Params&);
 
+/** Doichain: DigiShield-v3 per-block retarget core (ported from Zcash), used at
+ *  and above Consensus::Params::DoiDifficultyHeight.  bnAvg is the mean target
+ *  over the averaging window; the block times must be median-time-past values.
+ *  Exposed here so it can be unit-tested directly. */
+unsigned int CalculateNextWorkRequiredDigishield(arith_uint256 bnAvg, int64_t nLastBlockTime, int64_t nFirstBlockTime, const Consensus::Params&);
+
 /** Check whether a block hash satisfies the proof-of-work requirement specified by nBits */
 bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&);
 bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, const Consensus::Params&);

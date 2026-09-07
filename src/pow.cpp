@@ -11,10 +11,80 @@
 #include <uint256.h>
 #include <util/check.h>
 
+#include <limits>
+
+/* DigiShield-v3 difficulty adjustment, ported from Zcash's src/pow.cpp
+ * (GetNextWorkRequired / CalculateNextWorkRequired):
+ *   https://github.com/zcash/zcash  @ 558f686599586f55def3db86955d74d3be44605e
+ * Adapted to Doichain: uses Doichain's target spacing and is activated only from
+ * Consensus::Params::DoiDifficultyHeight onward.  Below that height Doichain keeps
+ * the original 2016-block retarget so the pre-existing chain stays valid. */
+unsigned int CalculateNextWorkRequiredDigishield(arith_uint256 bnAvg,
+        int64_t nLastBlockTime, int64_t nFirstBlockTime, const Consensus::Params& params)
+{
+    const int64_t averagingWindowTimespan = params.AveragingWindowTimespan();
+    const int64_t minActualTimespan = params.MinActualTimespan();
+    const int64_t maxActualTimespan = params.MaxActualTimespan();
+
+    // Median times prevent time-warp; damp the deviation to 1/4 of the window.
+    int64_t nActualTimespan = nLastBlockTime - nFirstBlockTime;
+    nActualTimespan = averagingWindowTimespan + (nActualTimespan - averagingWindowTimespan) / 4;
+    if (nActualTimespan < minActualTimespan) nActualTimespan = minActualTimespan;
+    if (nActualTimespan > maxActualTimespan) nActualTimespan = maxActualTimespan;
+
+    const arith_uint256 bnPowLimit = UintToArith256(params.powLimit);
+    arith_uint256 bnNew{bnAvg};
+    bnNew /= averagingWindowTimespan;
+    bnNew *= nActualTimespan;
+    if (bnNew > bnPowLimit) bnNew = bnPowLimit;
+    return bnNew.GetCompact();
+}
+
+namespace {
+
+unsigned int GetNextWorkRequiredDigishield(const CBlockIndex* pindexLast,
+        const CBlockHeader* pblock, const Consensus::Params& params)
+{
+    const unsigned int nProofOfWorkLimit = UintToArith256(params.powLimit).GetCompact();
+
+    if (params.fPowNoRetargeting)
+        return pindexLast->nBits;
+
+    // Emergency valve: after a long gap without a block, allow a min-difficulty
+    // block so honest miners can make progress even when difficulty is momentarily
+    // too high.  Disabled when nDoiMinDifficultyGap == 0.
+    if (params.nDoiMinDifficultyGap > 0 && pblock != nullptr
+        && pblock->GetBlockTime() > pindexLast->GetBlockTime() + params.nDoiMinDifficultyGap)
+        return nProofOfWorkLimit;
+
+    // Average the target over the last nPowAveragingWindow blocks.
+    const CBlockIndex* pindexFirst = pindexLast;
+    arith_uint256 bnTot{0};
+    for (int i = 0; pindexFirst != nullptr && i < params.nPowAveragingWindow; ++i) {
+        arith_uint256 bnTmp;
+        bnTmp.SetCompact(pindexFirst->nBits);
+        bnTot += bnTmp;
+        pindexFirst = pindexFirst->pprev;
+    }
+    if (pindexFirst == nullptr)
+        return nProofOfWorkLimit; // not enough blocks in the window yet
+
+    const arith_uint256 bnAvg{bnTot / params.nPowAveragingWindow};
+    return CalculateNextWorkRequiredDigishield(bnAvg,
+        pindexLast->GetMedianTimePast(), pindexFirst->GetMedianTimePast(), params);
+}
+
+} // anonymous namespace
+
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
     assert(pindexLast != nullptr);
     unsigned int nProofOfWorkLimit = UintToArith256(params.powLimit).GetCompact();
+
+    // Doichain: from DoiDifficultyHeight on, use the DigiShield-v3 per-block
+    // adjustment (ported from Zcash) instead of the legacy 2016-block retarget.
+    if (pindexLast->nHeight + 1 >= params.DoiDifficultyHeight)
+        return GetNextWorkRequiredDigishield(pindexLast, pblock, params);
 
     // Only change once per difficulty adjustment interval
     if ((pindexLast->nHeight+1) % params.DifficultyAdjustmentInterval() != 0)

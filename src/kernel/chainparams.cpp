@@ -128,6 +128,8 @@ public:
         consensus.SegwitHeight = 216500;
         consensus.DoiOwnershipHeight = 450000; // TODO(doichain): finalize before rollout (above current tip ~431k)
         consensus.DoiPowCheckHeight = 450000; // TODO(doichain): finalize; enforce correct difficulty from here on
+        consensus.DoiDifficultyHeight = 435000; // TODO(doichain): finalize near the then-current tip at rollout (anti-hash-attack DAA)
+        consensus.nDoiMinDifficultyGap = 6 * 10 * 60; // 1h emergency valve (Zcash testnet pattern) — flagged decision
         consensus.MinBIP9WarningHeight = 218500; // segwit activation height + miner confirmation window
         consensus.powLimit = uint256{"0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
@@ -286,6 +288,8 @@ public:
         consensus.SegwitHeight = 1000;
         consensus.DoiOwnershipHeight = 300000; // TODO(doichain): finalize (above current testnet tip)
         consensus.DoiPowCheckHeight = 300000; // TODO(doichain): finalize (above current testnet tip)
+        consensus.DoiDifficultyHeight = 300000; // TODO(doichain): set low for the multi-node DAA test so activation is reached
+        consensus.nDoiMinDifficultyGap = 6 * 10 * 60; // 1h emergency valve
         consensus.MinBIP9WarningHeight = 1000; // segwit activation height + miner confirmation window
         consensus.powLimit = uint256{"000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks

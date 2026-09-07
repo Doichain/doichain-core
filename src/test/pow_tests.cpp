@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <arith_uint256.h>
 #include <chain.h>
 #include <chainparams.h>
 #include <pow.h>
@@ -31,6 +32,37 @@ BOOST_AUTO_TEST_CASE(get_next_work)
     unsigned int expected_nbits = 0x1d00d86aU;
     BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus()), expected_nbits);
     BOOST_CHECK(PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
+}
+
+/* Doichain: DigiShield-v3 retarget core (ported from Zcash).  Verify the neutral
+   point and the damped, clamped +16% / -32% per-step behaviour. */
+BOOST_AUTO_TEST_CASE(digishield_retarget)
+{
+    const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
+    const auto& params{chainParams->GetConsensus()};
+    const int64_t window = params.AveragingWindowTimespan();
+
+    arith_uint256 bnAvg;
+    bnAvg.SetCompact(0x1d00ffff);
+
+    auto target = [&](int64_t last, int64_t first) {
+        arith_uint256 t;
+        t.SetCompact(CalculateNextWorkRequiredDigishield(bnAvg, last, first, params));
+        return t;
+    };
+    const arith_uint256 fast    = target(0, 0);           // blocks as fast as possible
+    const arith_uint256 neutral = target(window, 0);      // block times exactly on target
+    const arith_uint256 slow    = target(10 * window, 0); // blocks very slow
+
+    // Fast blocks raise difficulty (smaller target); slow blocks lower it.
+    BOOST_CHECK(fast < neutral);
+    BOOST_CHECK(neutral < slow);
+
+    // The per-block step is clamped to the damped +16% / -32% bounds.
+    arith_uint256 up{bnAvg};   up   /= window; up   *= params.MinActualTimespan();
+    arith_uint256 down{bnAvg}; down /= window; down *= params.MaxActualTimespan();
+    BOOST_CHECK_EQUAL(fast.GetCompact(), up.GetCompact());
+    BOOST_CHECK_EQUAL(slow.GetCompact(), down.GetCompact());
 }
 
 /* Test the constraint on the upper bound for next work */
