@@ -127,9 +127,17 @@ public:
         consensus.CSVHeight = 216500;
         consensus.SegwitHeight = 216500;
         consensus.DoiOwnershipHeight = 450000; // TODO(doichain): finalize before rollout (above current tip ~431k)
-        consensus.DoiPowCheckHeight = 450000; // TODO(doichain): finalize; enforce correct difficulty from here on
-        consensus.DoiDifficultyHeight = 435000; // TODO(doichain): finalize near the then-current tip at rollout (anti-hash-attack DAA)
-        consensus.nDoiMinDifficultyGap = 6 * 10 * 60; // 1h emergency valve (Zcash testnet pattern) — flagged decision
+        // TODO(doichain): finalize at rollout.  Both MUST be the then-current tip
+        // (+ upgrade margin) and equal: the stuck chain advances ~1 block per 6-7 h,
+        // so a height far above the tip (e.g. 435000) takes years to reach, and
+        // DigiShield's nBits is only enforced from DoiPowCheckHeight on.
+        consensus.DoiDifficultyHeight = 435000; // anti-hash-attack DAA (DigiShield-v3)
+        consensus.DoiPowCheckHeight = consensus.DoiDifficultyHeight; // enforce correct nBits from the same height
+        // One-time reset: measured 2026-09-08 at tip 431002 — ~5.0 PH/s => ~702M
+        // difficulty for 10-min blocks (the stuck chain sat 40x above that).
+        // Recompute from the hashrate measured at rollout.
+        consensus.nDoiDifficultyResetBits = 0x19061e72;
+        consensus.nDoiMinDifficultyGap = 6 * 10 * 60; // 1h emergency valve, bounded by nDoiMinDifficultyValveFactor (x4)
         consensus.MinBIP9WarningHeight = 218500; // segwit activation height + miner confirmation window
         consensus.powLimit = uint256{"0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
@@ -735,6 +743,17 @@ public:
                 consensus.CSVHeight = int{height};
                 break;
             }
+        }
+
+        // Doichain: -digishieldheight=<n> activates the DigiShield-v3 DAA from block <n>
+        // on regtest and turns on retargeting, so the difficulty algorithm can be tested
+        // end-to-end. Unset (the default) keeps regtest's fixed difficulty, so existing
+        // functional tests are unaffected.
+        if (opts.digishield_height) {
+            consensus.DoiDifficultyHeight = *opts.digishield_height;
+            consensus.fPowNoRetargeting = false;
+            consensus.nDoiMinDifficultyGap = 6 * consensus.nPowTargetSpacing; // emergency valve (1h), matches mainnet
+            if (opts.digishield_reset_bits) consensus.nDoiDifficultyResetBits = *opts.digishield_reset_bits;
         }
 
         for (const auto& [deployment_pos, version_bits_params] : opts.version_bits_parameters) {

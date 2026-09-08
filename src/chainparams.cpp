@@ -45,6 +45,23 @@ void ReadRegTestArgs(const ArgsManager& args, CChainParams::RegTestOptions& opti
 {
     if (auto value = args.GetBoolArg("-fastprune")) options.fastprune = *value;
     if (HasTestOption(args, "bip94")) options.enforce_bip94 = true;
+    if (args.IsArgSet("-digishieldheight")) {
+        const auto height{ToIntegral<int>(args.GetArg("-digishieldheight", ""))};
+        if (!height || *height < 0) {
+            throw std::runtime_error(strprintf("Invalid height (%s) for -digishieldheight=<n>.", args.GetArg("-digishieldheight", "")));
+        }
+        options.digishield_height = *height;
+    }
+    if (args.IsArgSet("-digishieldresetbits")) {
+        const std::string val{args.GetArg("-digishieldresetbits", "")};
+        uint32_t bits{0};
+        try {
+            bits = static_cast<uint32_t>(std::stoul(val, nullptr, 16));
+        } catch (...) {
+            throw std::runtime_error(strprintf("Invalid hex value (%s) for -digishieldresetbits=<nBits>.", val));
+        }
+        options.digishield_reset_bits = bits;
+    }
 
     for (const std::string& arg : args.GetArgs("-testactivationheight")) {
         const auto found{arg.find('@')};

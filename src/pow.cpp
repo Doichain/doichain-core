@@ -40,38 +40,65 @@ unsigned int CalculateNextWorkRequiredDigishield(arith_uint256 bnAvg,
     return bnNew.GetCompact();
 }
 
+/* Doichain: length of the one-time reset window at DoiDifficultyHeight.  It covers
+ * DigiShield's full lookback (averaging window + median-time span), so once it ends
+ * every target and timestamp the algorithm looks at is post-fork. */
+int DigishieldResetWindow(const Consensus::Params& params)
+{
+    return params.nPowAveragingWindow + CBlockIndex::nMedianTimeSpan;
+}
+
 namespace {
 
 unsigned int GetNextWorkRequiredDigishield(const CBlockIndex* pindexLast,
         const CBlockHeader* pblock, const Consensus::Params& params)
 {
-    const unsigned int nProofOfWorkLimit = UintToArith256(params.powLimit).GetCompact();
+    const arith_uint256 bnPowLimit = UintToArith256(params.powLimit);
+    const unsigned int nProofOfWorkLimit = bnPowLimit.GetCompact();
 
     if (params.fPowNoRetargeting)
         return pindexLast->nBits;
 
-    // Emergency valve: after a long gap without a block, allow a min-difficulty
-    // block so honest miners can make progress even when difficulty is momentarily
-    // too high.  Disabled when nDoiMinDifficultyGap == 0.
-    if (params.nDoiMinDifficultyGap > 0 && pblock != nullptr
-        && pblock->GetBlockTime() > pindexLast->GetBlockTime() + params.nDoiMinDifficultyGap)
-        return nProofOfWorkLimit;
+    const int nHeight = pindexLast->nHeight + 1;
+    arith_uint256 bnNew;
 
-    // Average the target over the last nPowAveragingWindow blocks.
-    const CBlockIndex* pindexFirst = pindexLast;
-    arith_uint256 bnTot{0};
-    for (int i = 0; pindexFirst != nullptr && i < params.nPowAveragingWindow; ++i) {
-        arith_uint256 bnTmp;
-        bnTmp.SetCompact(pindexFirst->nBits);
-        bnTot += bnTmp;
-        pindexFirst = pindexFirst->pprev;
+    if (params.nDoiDifficultyResetBits != 0
+        && nHeight < params.DoiDifficultyHeight + DigishieldResetWindow(params)) {
+        // Reset window: a fixed target for the first blocks after activation, so
+        // DigiShield later averages a clean post-fork window.  Averaging the stuck
+        // pre-fork targets/timestamps instead takes days to work off, and a
+        // single-block reset is pulled straight back up by the window.
+        bnNew.SetCompact(params.nDoiDifficultyResetBits);
+    } else {
+        // Average the target over the last nPowAveragingWindow blocks.
+        const CBlockIndex* pindexFirst = pindexLast;
+        arith_uint256 bnTot{0};
+        for (int i = 0; pindexFirst != nullptr && i < params.nPowAveragingWindow; ++i) {
+            arith_uint256 bnTmp;
+            bnTmp.SetCompact(pindexFirst->nBits);
+            bnTot += bnTmp;
+            pindexFirst = pindexFirst->pprev;
+        }
+        if (pindexFirst == nullptr)
+            return nProofOfWorkLimit; // not enough blocks in the window yet
+
+        const arith_uint256 bnAvg{bnTot / params.nPowAveragingWindow};
+        bnNew.SetCompact(CalculateNextWorkRequiredDigishield(bnAvg,
+            pindexLast->GetMedianTimePast(), pindexFirst->GetMedianTimePast(), params));
     }
-    if (pindexFirst == nullptr)
-        return nProofOfWorkLimit; // not enough blocks in the window yet
 
-    const arith_uint256 bnAvg{bnTot / params.nPowAveragingWindow};
-    return CalculateNextWorkRequiredDigishield(bnAvg,
-        pindexLast->GetMedianTimePast(), pindexFirst->GetMedianTimePast(), params);
+    // Emergency valve, bounded: after nDoiMinDifficultyGap seconds without a block,
+    // the next block may be at most nDoiMinDifficultyValveFactor times easier than
+    // the computed target.  Never powLimit: on Doichain that is ~2^50 easier than
+    // the working target, so one min-difficulty block would dominate the averaging
+    // window and collapse difficulty into a storm of ~1500 near-instant blocks.
+    if (params.nDoiMinDifficultyGap > 0 && params.nDoiMinDifficultyValveFactor > 1
+        && pblock != nullptr
+        && pblock->GetBlockTime() > pindexLast->GetBlockTime() + params.nDoiMinDifficultyGap)
+        bnNew *= static_cast<uint32_t>(params.nDoiMinDifficultyValveFactor);
+
+    if (bnNew > bnPowLimit) bnNew = bnPowLimit;
+    return bnNew.GetCompact();
 }
 
 } // anonymous namespace
@@ -174,6 +201,39 @@ unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nF
 bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t height, uint32_t old_nbits, uint32_t new_nbits)
 {
     if (params.fPowAllowMinDifficultyBlocks) return true;
+
+    // Doichain: from DoiDifficultyHeight on the target moves every block.  Bound the
+    // per-block step by DigiShield's clamp, widened by the emergency-valve factor
+    // (timestamps are not available here, so a valve block cannot be told apart).
+    // Inside the reset window the target may jump to the reset target from anywhere.
+    // Exact nBits are enforced separately in ContextualCheckBlockHeader.
+    if (height >= params.DoiDifficultyHeight) {
+        const arith_uint256 pow_limit = UintToArith256(params.powLimit);
+        arith_uint256 observed_new_target;
+        observed_new_target.SetCompact(new_nbits);
+        if (observed_new_target == 0 || observed_new_target > pow_limit) return false;
+
+        const int64_t valve = params.nDoiMinDifficultyValveFactor > 1 ? params.nDoiMinDifficultyValveFactor : 1;
+        if (params.nDoiDifficultyResetBits != 0
+            && height < params.DoiDifficultyHeight + DigishieldResetWindow(params)) {
+            arith_uint256 reset_target;
+            reset_target.SetCompact(params.nDoiDifficultyResetBits);
+            arith_uint256 max_target{reset_target};
+            max_target *= valve;
+            if (max_target > pow_limit) max_target = pow_limit;
+            return observed_new_target >= reset_target && observed_new_target <= max_target;
+        }
+
+        arith_uint256 old_target;
+        old_target.SetCompact(old_nbits);
+        const int64_t window = params.AveragingWindowTimespan();
+        arith_uint256 max_target{old_target};
+        max_target /= window; max_target *= params.MaxActualTimespan(); max_target *= valve;
+        if (max_target > pow_limit) max_target = pow_limit;
+        arith_uint256 min_target{old_target};
+        min_target /= window; min_target *= params.MinActualTimespan(); min_target /= valve;
+        return observed_new_target >= min_target && observed_new_target <= max_target;
+    }
 
     if (height % params.DifficultyAdjustmentInterval() == 0) {
         int64_t smallest_timespan = params.nPowTargetTimespan/4;

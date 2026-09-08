@@ -35,6 +35,10 @@ unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nF
  *  Exposed here so it can be unit-tested directly. */
 unsigned int CalculateNextWorkRequiredDigishield(arith_uint256 bnAvg, int64_t nLastBlockTime, int64_t nFirstBlockTime, const Consensus::Params&);
 
+/** Doichain: number of blocks from DoiDifficultyHeight that use the fixed reset
+ *  target (nDoiDifficultyResetBits) before DigiShield averaging takes over. */
+int DigishieldResetWindow(const Consensus::Params&);
+
 /** Check whether a block hash satisfies the proof-of-work requirement specified by nBits */
 bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&);
 bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, const Consensus::Params&);

@@ -65,6 +65,150 @@ BOOST_AUTO_TEST_CASE(digishield_retarget)
     BOOST_CHECK_EQUAL(slow.GetCompact(), down.GetCompact());
 }
 
+namespace {
+/* Doichain: a minimal, mutable Consensus::Params for the DigiShield tests.  The
+   real struct is move-only (it owns the name-rules object), so it cannot be
+   copied; carry over just the fields the difficulty code reads. */
+void InitDigishieldParams(Consensus::Params& p, const Consensus::Params& main)
+{
+    p.powLimit = main.powLimit;
+    p.nPowTargetSpacing = main.nPowTargetSpacing;
+    p.nPowTargetTimespan = main.nPowTargetTimespan;
+    p.fPowAllowMinDifficultyBlocks = false;
+    p.fPowNoRetargeting = false;
+    p.nPowAveragingWindow = main.nPowAveragingWindow;
+    p.nPowMaxAdjustUp = main.nPowMaxAdjustUp;
+    p.nPowMaxAdjustDown = main.nPowMaxAdjustDown;
+    p.nDoiMinDifficultyValveFactor = main.nDoiMinDifficultyValveFactor;
+}
+} // namespace
+
+/* Doichain: the emergency valve eases the DigiShield target by a bounded factor
+   after a long gap — never to powLimit, which would poison the averaging window
+   and trigger a block storm. */
+BOOST_AUTO_TEST_CASE(digishield_bounded_valve)
+{
+    const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
+    Consensus::Params params{};
+    InitDigishieldParams(params, chainParams->GetConsensus());
+    params.fPowNoRetargeting = false;
+    params.DoiDifficultyHeight = 0;             // DigiShield from genesis
+    params.nDoiDifficultyResetBits = 0;         // no reset window: plain averaging
+    params.nDoiMinDifficultyGap = 6 * params.nPowTargetSpacing;
+    params.nDoiMinDifficultyValveFactor = 4;
+
+    const int n = params.nPowAveragingWindow + CBlockIndex::nMedianTimeSpan + 5;
+    std::vector<CBlockIndex> blocks(n);
+    for (int i = 0; i < n; ++i) {
+        blocks[i].pprev = i ? &blocks[i - 1] : nullptr;
+        blocks[i].nHeight = i;
+        blocks[i].nTime = 1700000000 + i * params.nPowTargetSpacing;
+        blocks[i].nBits = 0x1826f19c; // mainnet difficulty during the 2026 hash-attack
+    }
+    const CBlockIndex* tip = &blocks[n - 1];
+
+    CBlockHeader normal;
+    normal.nTime = tip->nTime + params.nPowTargetSpacing;
+    const unsigned int nbits_normal = GetNextWorkRequired(tip, &normal, params);
+
+    CBlockHeader late;
+    late.nTime = tip->nTime + params.nDoiMinDifficultyGap + 1;
+    const unsigned int nbits_valve = GetNextWorkRequired(tip, &late, params);
+
+    arith_uint256 t_normal, t_valve;
+    t_normal.SetCompact(nbits_normal);
+    t_valve.SetCompact(nbits_valve);
+    arith_uint256 expected{t_normal};
+    expected *= 4;
+    BOOST_CHECK_EQUAL(t_valve.GetCompact(), expected.GetCompact());   // exactly 4x easier...
+    BOOST_CHECK(t_valve < UintToArith256(params.powLimit));             // ...and nowhere near powLimit
+    BOOST_CHECK(PermittedDifficultyTransition(params, tip->nHeight + 1, tip->nBits, nbits_valve));
+}
+
+/* Doichain: the first (averaging window + median-time span) blocks after activation
+   use the fixed reset target, so DigiShield then starts from a clean window. */
+BOOST_AUTO_TEST_CASE(digishield_reset_window)
+{
+    const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
+    Consensus::Params params{};
+    InitDigishieldParams(params, chainParams->GetConsensus());
+    params.fPowNoRetargeting = false;
+    params.nDoiMinDifficultyGap = 0;
+    const int activation = 40;
+    params.DoiDifficultyHeight = activation;
+    params.nDoiDifficultyResetBits = 0x19061e72;   // ~40x easier than the stuck chain
+    const int reset_window = DigishieldResetWindow(params);
+    BOOST_CHECK_EQUAL(reset_window, params.nPowAveragingWindow + CBlockIndex::nMedianTimeSpan);
+
+    // Stuck pre-fork chain (high difficulty, ~400-min blocks), then reset blocks at 10 min.
+    const int n = activation + reset_window + 3;
+    std::vector<CBlockIndex> blocks(n);
+    int64_t t = 1700000000;
+    for (int i = 0; i < n; ++i) {
+        if (i) t += (i < activation ? 40 : 1) * params.nPowTargetSpacing;
+        blocks[i].pprev = i ? &blocks[i - 1] : nullptr;
+        blocks[i].nHeight = i;
+        blocks[i].nTime = t;
+        blocks[i].nBits = i < activation ? 0x1826f19c : params.nDoiDifficultyResetBits;
+    }
+
+    CBlockHeader next;
+    // Every block inside the reset window gets exactly the reset target, whatever the
+    // stuck pre-fork history looks like.
+    for (int h = activation; h < activation + reset_window; ++h) {
+        const CBlockIndex* prev = &blocks[h - 1];
+        next.nTime = prev->nTime + params.nPowTargetSpacing;
+        BOOST_CHECK_EQUAL(GetNextWorkRequired(prev, &next, params), params.nDoiDifficultyResetBits);
+        BOOST_CHECK(PermittedDifficultyTransition(params, h, prev->nBits, params.nDoiDifficultyResetBits));
+    }
+    // The first block after the window is computed by DigiShield from an all-reset
+    // window at neutral spacing: it stays at the reset target (within rounding).
+    const CBlockIndex* prev = &blocks[activation + reset_window - 1];
+    next.nTime = prev->nTime + params.nPowTargetSpacing;
+    arith_uint256 got, reset;
+    got.SetCompact(GetNextWorkRequired(prev, &next, params));
+    reset.SetCompact(params.nDoiDifficultyResetBits);
+    BOOST_CHECK(got <= reset);                                   // never easier than the reset...
+    arith_uint256 lower{reset};
+    lower /= params.AveragingWindowTimespan();
+    lower *= params.MinActualTimespan();
+    BOOST_CHECK(got >= lower);                                   // ...and at most one clamp step harder
+}
+
+/* Doichain: headers-sync plausibility bound for per-block DigiShield changes. */
+BOOST_AUTO_TEST_CASE(digishield_permitted_transition)
+{
+    const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
+    Consensus::Params params{};
+    InitDigishieldParams(params, chainParams->GetConsensus());
+    params.DoiDifficultyHeight = 0;
+    params.nDoiDifficultyResetBits = 0;
+    params.nDoiMinDifficultyValveFactor = 4;
+    const uint32_t old_nbits = 0x1826f19c;
+    arith_uint256 old_t;
+    old_t.SetCompact(old_nbits);
+    const int64_t window = params.AveragingWindowTimespan();
+
+    arith_uint256 max_ok{old_t};
+    max_ok /= window; max_ok *= params.MaxActualTimespan(); max_ok *= 4;
+    arith_uint256 min_ok{old_t};
+    min_ok /= window; min_ok *= params.MinActualTimespan(); min_ok /= 4;
+    arith_uint256 near_min{min_ok};
+    near_min *= 101; near_min /= 100;                             // just inside the lower bound
+
+    BOOST_CHECK(PermittedDifficultyTransition(params, 1000, old_nbits, old_nbits));
+    BOOST_CHECK(PermittedDifficultyTransition(params, 1000, old_nbits, max_ok.GetCompact()));
+    BOOST_CHECK(PermittedDifficultyTransition(params, 1000, old_nbits, near_min.GetCompact()));
+    arith_uint256 too_easy{max_ok};
+    too_easy *= 2;
+    arith_uint256 too_hard{min_ok};
+    too_hard /= 2;
+    BOOST_CHECK(!PermittedDifficultyTransition(params, 1000, old_nbits, too_easy.GetCompact()));
+    BOOST_CHECK(!PermittedDifficultyTransition(params, 1000, old_nbits, too_hard.GetCompact()));
+    // Dropping straight to powLimit is never a permitted per-block step.
+    BOOST_CHECK(!PermittedDifficultyTransition(params, 1000, old_nbits, UintToArith256(params.powLimit).GetCompact()));
+}
+
 /* Test the constraint on the upper bound for next work */
 BOOST_AUTO_TEST_CASE(get_next_work_pow_limit)
 {

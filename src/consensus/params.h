@@ -221,9 +221,19 @@ struct Params {
     int64_t nPowAveragingWindow{17};   //!< blocks averaged per retarget
     int64_t nPowMaxAdjustUp{16};       //!< max upward step per block, percent
     int64_t nPowMaxAdjustDown{32};     //!< max downward step per block, percent
-    /** Emergency valve: allow a min-difficulty block after this many seconds
-     *  without a block, so a stuck chain can make progress.  0 disables it. */
+    /** Emergency valve: after this many seconds without a block, the next block may
+     *  be easier than the DigiShield target (see nDoiMinDifficultyValveFactor), so a
+     *  stuck chain keeps making progress.  0 disables the valve. */
     int64_t nDoiMinDifficultyGap{0};
+    /** How many times easier a valve block may be than the computed target.  Bounded
+     *  on purpose: dropping to powLimit (~2^50 easier on Doichain) would poison the
+     *  averaging window and trigger a storm of ~1500 near-instant blocks. */
+    int64_t nDoiMinDifficultyValveFactor{4};
+    /** One-time difficulty reset at DoiDifficultyHeight: the first
+     *  (nPowAveragingWindow + median-time span) blocks use this compact target, so
+     *  DigiShield starts from a clean post-fork window rather than the stuck pre-fork
+     *  one.  Derive from the hashrate measured at rollout.  0 = no reset. */
+    unsigned int nDoiDifficultyResetBits{0};
     int64_t AveragingWindowTimespan() const { return nPowAveragingWindow * nPowTargetSpacing; }
     int64_t MinActualTimespan() const { return (AveragingWindowTimespan() * (100 - nPowMaxAdjustUp)) / 100; }
     int64_t MaxActualTimespan() const { return (AveragingWindowTimespan() * (100 + nPowMaxAdjustDown)) / 100; }
