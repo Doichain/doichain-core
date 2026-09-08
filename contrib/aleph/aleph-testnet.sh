@@ -17,6 +17,7 @@
 #
 # Env: ALEPH_ACCOUNT (default: active account), SSH_KEY (~/.ssh/id_ed25519),
 #      VM_SIZE (1vcpu-2gb), HONEST_HR (1000), ATTACK_HR (47000)
+export LC_ALL=C
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE="${HERE}/state"; mkdir -p "${STATE}"
@@ -166,7 +167,7 @@ cmd_leave() { [ "${NODE_COUNT}" -ge 2 ] || { echo "no attacker with NODE_COUNT=1
 cmd_status() { for i in $(seq 1 "${NODE_COUNT}"); do echo "vm$i $(vssh "$i" doichain-status 2>&1)"; done; }
 
 cmd_collect() {
-  local dir="${HERE}/runs/$(date +%Y%m%d-%H%M%S)"; mkdir -p "$dir"
+  local dir; dir="${HERE}/runs/$(date +%Y%m%d-%H%M%S)"; mkdir -p "$dir"
   for i in $(seq 1 "${NODE_COUNT}"); do
     scp -q -i "${SSH_KEY}" -P "$(net_get "$i" ssh_port)" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
       "root@$(net_get "$i" ipv4):/var/lib/doichain/miner.csv" "$dir/vm$i-miner.csv" 2>/dev/null || true
@@ -185,7 +186,7 @@ cmd_watchdog() {  # watchdog <hours>: detached timer that collects, then FORGETs
   echo $! > "${STATE}/watchdog.pid"
   log "watchdog pid $! will collect + down at ${deadline} UTC  (cancel: ./aleph-testnet.sh watchdog-cancel)"
 }
-cmd_watchdog_cancel() { kill "$(cat "${STATE}/watchdog.pid")" 2>/dev/null && log "watchdog cancelled" || log "no watchdog running"; }
+cmd_watchdog_cancel() { if kill "$(cat "${STATE}/watchdog.pid" 2>/dev/null)" 2>/dev/null; then log "watchdog cancelled"; else log "no watchdog running"; fi; }
 cmd_at() {  # at <minutes> <subcommand>: detached timer, e.g. `at 45 leave`
   local mins="$1" sub="$2"; local when; when=$(date -u -v+"${mins}"M +%FT%TZ 2>/dev/null || date -u -d "+${mins} minutes" +%FT%TZ)
   nohup bash -c "sleep $(( mins * 60 )); cd '${HERE}'; ./aleph-testnet.sh ${sub}" > "${STATE}/at-${sub}.log" 2>&1 &
@@ -196,7 +197,7 @@ cmd_at() {  # at <minutes> <subcommand>: detached timer, e.g. `at 45 leave`
 cmd_down() {
   for i in $(seq 1 "${NODE_COUNT}"); do
     local h; h=$(vm_hash "$i")
-    aleph instance delete "$h" --json "${ACCT[@]}" >/dev/null && log "forgot ${NAMES[$((i-1))]} ($h)" || log "delete failed for $h"
+    if aleph instance delete "$h" --json "${ACCT[@]}" >/dev/null; then log "forgot ${NAMES[$((i-1))]} ($h)"; else log "delete failed for $h"; fi
   done
 }
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Runs once inside the image at build time (virt-customize --run-command).
+export LC_ALL=C
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq

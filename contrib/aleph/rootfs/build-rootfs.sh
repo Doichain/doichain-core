@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Host wrapper: build the libguestfs builder image, then run build-rootfs-image.sh
 # inside it (privileged, amd64).  Needs Docker (Docker Desktop on macOS).
+export LC_ALL=C
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STAGE="$(cd "${HERE}/.." && pwd)"

@@ -2,6 +2,7 @@
 # Runs INSIDE the libguestfs builder container (see build-rootfs.sh).
 # Debian 12 genericcloud qcow2 -> doichaind + miner + systemd units baked in ->
 # sparsified/compressed qcow2 ready for `aleph file upload`.
+export LC_ALL=C
 set -euo pipefail
 
 WS="${WS:-/workspace}"                     # stage-b directory, bind-mounted

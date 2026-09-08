@@ -3,6 +3,7 @@
 # distro as the Aleph guest image, so the dynamically linked binaries run there.
 # Output: dist/doichaind, dist/doichain-cli (stripped).  The CMake build dir lives
 # in a named Docker volume so re-runs are incremental.
+export LC_ALL=C
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source tree: the enclosing git checkout by default (contrib/aleph/ lives inside it).
