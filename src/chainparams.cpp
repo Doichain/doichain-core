@@ -62,6 +62,14 @@ void ReadRegTestArgs(const ArgsManager& args, CChainParams::RegTestOptions& opti
         const auto& b{*bytes};
         options.digishield_reset_bits = (uint32_t{b[0]} << 24) | (uint32_t{b[1]} << 16) | (uint32_t{b[2]} << 8) | uint32_t{b[3]};
     }
+    if (args.GetBoolArg("-digishieldstrict", false)) options.digishield_strict = true;
+    if (args.IsArgSet("-powtargetspacing")) {
+        const auto spacing{ToIntegral<int64_t>(args.GetArg("-powtargetspacing", ""))};
+        if (!spacing || *spacing <= 0) {
+            throw std::runtime_error(strprintf("Invalid value (%s) for -powtargetspacing=<seconds>.", args.GetArg("-powtargetspacing", "")));
+        }
+        options.pow_target_spacing = *spacing;
+    }
 
     for (const std::string& arg : args.GetArgs("-testactivationheight")) {
         const auto found{arg.find('@')};

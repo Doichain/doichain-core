@@ -745,6 +745,16 @@ public:
             }
         }
 
+        // Doichain: regtest-only knobs for DAA experiments.  -powtargetspacing compresses
+        // time (the DigiShield window, valve gap and old retarget interval all scale with
+        // it); -digishieldstrict disallows min-difficulty blocks so that
+        // PermittedDifficultyTransition is enforced between peers, as on mainnet.
+        if (opts.pow_target_spacing) {
+            consensus.nPowTargetSpacing = *opts.pow_target_spacing;
+            consensus.nPowTargetTimespan = *opts.pow_target_spacing * 144; // keep the 144-block regtest interval
+        }
+        if (opts.digishield_strict) consensus.fPowAllowMinDifficultyBlocks = false;
+
         // Doichain: -digishieldheight=<n> activates the DigiShield-v3 DAA from block <n>
         // on regtest and turns on retargeting, so the difficulty algorithm can be tested
         // end-to-end. Unset (the default) keeps regtest's fixed difficulty, so existing
