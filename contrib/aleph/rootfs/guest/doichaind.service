@@ -1,0 +1,19 @@
+[Unit]
+Description=Doichain regtest node (DAA rehearsal)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=doichain
+Group=doichain
+EnvironmentFile=/etc/default/doichain
+RuntimeDirectory=doichain
+RuntimeDirectoryMode=0775
+RuntimeDirectoryPreserve=yes
+ExecStart=/usr/local/bin/doichaind $DOICHAIND_OPTS $DOICHAIND_PEERS
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

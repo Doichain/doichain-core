@@ -1,0 +1,6 @@
+dist/
+state/
+runs/
+.dockercfg/
+local-data/
+*.log

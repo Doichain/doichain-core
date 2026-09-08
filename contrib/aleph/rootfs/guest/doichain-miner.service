@@ -1,0 +1,19 @@
+[Unit]
+Description=Doichain throttled CPU miner / chain observer
+After=doichaind.service
+Requires=doichaind.service
+
+[Service]
+User=doichain
+Group=doichain
+EnvironmentFile=/etc/default/doichain-miner
+RuntimeDirectory=doichain
+RuntimeDirectoryMode=0775
+RuntimeDirectoryPreserve=yes
+ExecStartPre=/bin/rm -f /run/doichain/miner.stop
+ExecStart=/usr/bin/python3 /usr/local/lib/doichain/miner.py --datadir /var/lib/doichain --rpc http://127.0.0.1:18443 --hashrate ${MINER_HASHRATE} --tick ${MINER_TICK} --name ${MINER_NAME} --stop-file /run/doichain/miner.stop --csv /var/lib/doichain/miner.csv
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
