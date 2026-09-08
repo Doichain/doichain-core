@@ -53,14 +53,14 @@ void ReadRegTestArgs(const ArgsManager& args, CChainParams::RegTestOptions& opti
         options.digishield_height = *height;
     }
     if (args.IsArgSet("-digishieldresetbits")) {
+        // Locale-independent hex parse (no std::stoul): exactly 8 hex digits, big-endian nBits.
         const std::string val{args.GetArg("-digishieldresetbits", "")};
-        uint32_t bits{0};
-        try {
-            bits = static_cast<uint32_t>(std::stoul(val, nullptr, 16));
-        } catch (...) {
-            throw std::runtime_error(strprintf("Invalid hex value (%s) for -digishieldresetbits=<nBits>.", val));
+        const auto bytes{TryParseHex<uint8_t>(val)};
+        if (!bytes || bytes->size() != 4) {
+            throw std::runtime_error(strprintf("Invalid value (%s) for -digishieldresetbits=<nBits>: expected 8 hex digits.", val));
         }
-        options.digishield_reset_bits = bits;
+        const auto& b{*bytes};
+        options.digishield_reset_bits = (uint32_t{b[0]} << 24) | (uint32_t{b[1]} << 16) | (uint32_t{b[2]} << 8) | uint32_t{b[3]};
     }
 
     for (const std::string& arg : args.GetArgs("-testactivationheight")) {
