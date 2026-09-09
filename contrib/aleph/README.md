@@ -47,6 +47,21 @@ Debian 12, and a binary from a newer distro fails there on glibc/libevent versio
 
 ## The rehearsal (three nodes)
 
+Re-run the whole difficulty-attack rehearsal — attacker pumps the difficulty, leaves,
+DigiShield recovers — with a single command. The VMs are always torn down at the end
+(even on error or Ctrl-C), so a failed run never keeps billing:
+
+```bash
+./aleph-testnet.sh rehearse         # up → wire → roles → attack → leave → recover → collect → down
+PUMP_MIN=45 REC_MIN=180 ./aleph-testnet.sh rehearse   # tune the phase lengths (defaults shown)
+```
+
+It leaves the measured data in `runs/<timestamp>/` and evaluates it with `analyze-run.py`
+(recovery curve, valve events, time-to-recover). The reference run (2026-09-08) recovered
+a 48× attack in ~2.5 h time-lapse (≈ 25 h mainnet scale) and then held ~60-second blocks.
+
+Or drive the phases by hand:
+
 ```bash
 ./aleph-testnet.sh up && ./aleph-testnet.sh wait
 ./aleph-testnet.sh wire      # -addnode mesh over SSH, restart nodes, verify 2 peers each

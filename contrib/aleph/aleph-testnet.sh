@@ -12,6 +12,7 @@
 #   ./aleph-testnet.sh status       one line per VM (height, bits, difficulty, peers, tip age)
 #   ./aleph-testnet.sh collect      miner.csv + debug.log from every VM -> runs/<timestamp>/
 #   ./aleph-testnet.sh down         FORGET all instances (stops billing)
+#   ./aleph-testnet.sh rehearse     end to end: up->wire->roles->attack->leave->recover->collect->down
 #   ./aleph-testnet.sh watchdog 12  detached timer: collect + down after N hours
 #   ./aleph-testnet.sh ssh <n> [cmd]
 #
@@ -178,6 +179,22 @@ cmd_collect() {
   log "collected into $dir"; ls -la "$dir"
 }
 
+cmd_rehearse() {  # the whole rehearsal in one command, with guaranteed teardown
+  # PUMP_MIN: minutes the attacker pumps the difficulty (default 45, as in the reference run)
+  # REC_MIN:  minutes to watch the recovery before collecting (default 180)
+  local pump="${PUMP_MIN:-45}" rec="${REC_MIN:-180}"
+  # Whatever happens next -- success, error, or Ctrl-C -- the VMs come down (stops billing).
+  trap 'echo; log "teardown (rehearse end/abort)"; cmd_down || true' EXIT
+  cmd_up; cmd_wait; cmd_wire; cmd_roles
+  log "attack phase: attacker pumps for ${pump} min"
+  for i in $(seq 1 "$pump"); do sleep 60; [ $((i % 5)) -eq 0 ] && { log "  +${i}min"; cmd_status || true; }; done
+  cmd_leave
+  log "recovery phase: watching for up to ${rec} min"
+  for i in $(seq 1 "$rec"); do sleep 60; [ $((i % 10)) -eq 0 ] && { log "  +${i}min"; cmd_status || true; }; done
+  cmd_collect
+  log "rehearse done -- data in runs/, tearing down"
+}
+
 cmd_watchdog() {  # watchdog <hours>: detached timer that collects, then FORGETs everything
   local hours="${1:-12}"; local secs=$(( hours * 3600 ))
   local deadline; deadline=$(date -u -v+"${hours}"H +%FT%TZ 2>/dev/null || date -u -d "+${hours} hours" +%FT%TZ)
@@ -212,6 +229,7 @@ case "${1:-}" in
   status)  cmd_status ;;
   collect) cmd_collect ;;
   down)    cmd_down ;;
+  rehearse)        cmd_rehearse ;;
   watchdog)        cmd_watchdog "${2:-12}" ;;
   watchdog-cancel) cmd_watchdog_cancel ;;
   at)      cmd_at "$2" "$3" ;;
