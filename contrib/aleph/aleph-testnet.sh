@@ -197,7 +197,7 @@ cmd_at() {  # at <minutes> <subcommand>: detached timer, e.g. `at 45 leave`
 cmd_down() {
   for i in $(seq 1 "${NODE_COUNT}"); do
     local h; h=$(vm_hash "$i")
-    if aleph instance delete "$h" --json "${ACCT[@]}" >/dev/null; then log "forgot ${NAMES[$((i-1))]} ($h)"; else log "delete failed for $h"; fi
+    if aleph instance delete "$h" --yes --json "${ACCT[@]}" >/dev/null; then log "forgot ${NAMES[$((i-1))]} ($h)"; else log "delete failed for $h"; fi
   done
 }
 
