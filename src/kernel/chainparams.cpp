@@ -219,8 +219,12 @@ public:
 
         bech32_hrp = "dc";
 
-        // TODO(doichain): regenerate fixed seeds from the live network; rely on DNS seeds for now.
-        vFixedSeeds.clear();
+        // Fixed seeds, regenerated from the live network on 2026-09-11 (see
+        // contrib/seeds/nodes_main.txt). Relying on the DNS seeds alone was not
+        // viable: dnsseed.doichain.org and seed.doi.works both return zero
+        // addresses, so a node with an empty addrman had no way into the network
+        // at all and sat at 0 peers indefinitely.
+        vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_main), std::end(chainparams_seed_main));
 
         fDefaultConsistencyChecks = false;
         m_is_mockable_chain = false;
