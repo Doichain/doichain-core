@@ -202,6 +202,21 @@ bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t heig
 {
     if (params.fPowAllowMinDifficultyBlocks) return true;
 
+    // Doichain: the nBits rule was not enforced historically -- the chain was
+    // launched with the difficulty check disabled for the premine, so blocks
+    // arrived in seconds and e.g. height 2016 moves the target by ~41x, far
+    // outside the legacy 4x clamp that the generic branch below assumes.
+    // ContextualCheckBlockHeader therefore only enforces nBits from
+    // DoiPowCheckHeight onward (see "Doichain historically did not enforce this
+    // rule" there), and this anti-DoS heuristic has to mirror that: otherwise
+    // headers presync rejects the real chain at height 2016 with "invalid
+    // difficulty transition" and a fresh node can never sync past it.
+    //
+    // Work accounting is unaffected -- CheckProofOfWork still verifies every
+    // header's hash against its own claimed target at every height, so a peer
+    // cannot fabricate work here.
+    if (height < params.DoiPowCheckHeight) return true;
+
     // Doichain: from DoiDifficultyHeight on the target moves every block.  Bound the
     // per-block step by DigiShield's clamp, widened by the emergency-valve factor
     // (timestamps are not available here, so a valve block cannot be told apart).
