@@ -2799,7 +2799,18 @@ bool PeerManagerImpl::TryLowWorkHeadersSync(Peer& peer, CNode& pfrom, const CBlo
         // Only try to sync with this peer if their headers message was full;
         // otherwise they don't have more headers after this so no point in
         // trying to sync their too-little-work chain.
-        if (headers.size() == m_opts.max_headers_result) {
+        //
+        // Doichain: "full" has to be judged by IsHeadersListMax(), not by the raw
+        // entry count. AuxPoW headers are ~2.3 kB rather than 81 bytes, so a peer
+        // reaches the threshold_headers_size byte cap (4 MiB) long before it
+        // reaches max_headers_result entries -- in practice ~1792 headers per
+        // message. Comparing the count alone therefore never matched: every
+        // peer's chain was discarded as low-work, the presync was never started,
+        // and a fresh node stayed at height 0 forever. The byte-aware predicate
+        // is already used for the other "was this list maxed out?" decisions
+        // (the ProcessNextHeaders() call and the getheaders follow-up); this
+        // call site was simply missed.
+        if (IsHeadersListMax(pfrom, headers)) {
             // Note: we could advance to the last header in this set that is
             // known to us, rather than starting at the first header (which we
             // may already have); however this is unlikely to matter much since
