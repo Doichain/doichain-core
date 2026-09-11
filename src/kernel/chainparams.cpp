@@ -126,17 +126,19 @@ public:
         /* Doichain activates CSV/Segwit with BIP16.  */
         consensus.CSVHeight = 216500;
         consensus.SegwitHeight = 216500;
-        consensus.DoiOwnershipHeight = 450000; // TODO(doichain): finalize before rollout (above current tip ~431k)
-        // TODO(doichain): finalize at rollout.  Both MUST be the then-current tip
-        // (+ upgrade margin) and equal: the stuck chain advances ~1 block per 6-7 h,
-        // so a height far above the tip (e.g. 435000) takes years to reach, and
-        // DigiShield's nBits is only enforced from DoiPowCheckHeight on.
-        consensus.DoiDifficultyHeight = 435000; // anti-hash-attack DAA (DigiShield-v3)
+        consensus.DoiOwnershipHeight = 431017; // rollout flag-day (tip 431016 + 1): strict name_doi ownership on
+        // Rollout flag-day = tip + 1 (mainnet tip was 431016 on 2026-09-11, confirmed
+        // against a synced node + explorer).  Activation MUST be tip+1: the stuck chain
+        // (~202 PH/s => ~28.2e9 difficulty) cannot grind even one old-rules block with the
+        // ~30 TH/s available (~47 days/block), so the upgrade is coordinated OFF-chain
+        // (everyone installs 31.1.1 first) rather than by an on-chain grace period.
+        consensus.DoiDifficultyHeight = 431017; // anti-hash-attack DAA (DigiShield-v3) activates here
         consensus.DoiPowCheckHeight = consensus.DoiDifficultyHeight; // enforce correct nBits from the same height
-        // One-time reset: measured 2026-09-08 at tip 431002 — ~5.0 PH/s => ~702M
-        // difficulty for 10-min blocks (the stuck chain sat 40x above that).
-        // Recompute from the hashrate measured at rollout.
-        consensus.nDoiDifficultyResetBits = 0x19061e72;
+        // One-time reset at DoiDifficultyHeight, sized for the ~30 TH/s available at
+        // relaunch: difficulty 4,190,963 for 10-min blocks (nBits 0x1a0400cd).
+        // Re-measure the real hashrate right before launch and set slightly on the easy
+        // side (10/20/50/100 TH/s => 0x1a0c0269 / 0x1a060134 / 0x1a0266e1 / 0x1a013370).
+        consensus.nDoiDifficultyResetBits = 0x1a0400cd;
         consensus.nDoiMinDifficultyGap = 6 * 10 * 60; // 1h emergency valve, bounded by nDoiMinDifficultyValveFactor (x4)
         consensus.MinBIP9WarningHeight = 218500; // segwit activation height + miner confirmation window
         consensus.powLimit = uint256{"0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
@@ -158,10 +160,11 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation delay
 
-        // TODO(doichain): set to a real recent Doichain mainnet chainwork / best-block
-        // hash before rollout (currently disabled -> full validation from genesis).
-        consensus.nMinimumChainWork = uint256{"0000000000000000000000000000000000000000000000000000000000000000"};
-        consensus.defaultAssumeValid = uint256{"0000000000000000000000000000000000000000000000000000000000000000"};
+        // Pinned to the last pre-relaunch block 431016 (2026-09-11, from a synced node,
+        // matches the public explorer).  nMinimumChainWork = its chainwork (anti-DoS
+        // header floor); defaultAssumeValid = its hash (skip script checks up to it).
+        consensus.nMinimumChainWork = uint256{"00000000000000000000000000000000000000000002bef1dd2f4acd13484a70"};
+        consensus.defaultAssumeValid = uint256{"4f5e8c0e4efb3504f8923ea175e4e5e688963819dcfbe33cc7f5a28c33616823"};
 
         consensus.nAuxpowChainId = 0x0002;
         consensus.nAuxpowStartHeight = 1;
