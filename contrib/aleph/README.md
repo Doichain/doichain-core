@@ -97,13 +97,15 @@ RPC stays on localhost (cookie auth); everything is driven over SSH (`root@<host
 
 | File | Role |
 |---|---|
-| `aleph-testnet.sh` | orchestrator: `build · upload · up · wait · wire · roles · leave · status · collect · down · ssh` |
+| `aleph-testnet.sh` | orchestrator: `build · upload · up · wait · wire · roles · leave · status · collect · down · rehearse · watchdog · ssh` |
 | `build-linux-binaries.sh` | Debian-12 build of `doichaind`/`doichain-cli` in Docker → `dist/` |
 | `rootfs/build-rootfs.sh` | host wrapper: builds the libguestfs builder image and runs the recipe (privileged, amd64) |
 | `rootfs/build-rootfs-image.sh` | the recipe (runs inside the builder): genericcloud qcow2 → customize → `virt-sparsify --compress` |
 | `rootfs/guest/*` | systemd units, env files, guest setup, status helper |
 | `miner.py` | throttled miner / observer (also usable against any local regtest node) |
 | `reference-rootfs.json` | item hash of the published reference image (Path A) |
+| `analyze-run.py` | recovery timeline (curve, valve events, time-to-recover) from the collected miner CSV logs |
+| `docs/haertetest-kunde.html` | customer-facing report of the reference run; render to PDF with `docs/render-pdf.sh` |
 
 ## Aleph specifics worth knowing
 

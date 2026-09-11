@@ -4,3 +4,6 @@ runs/
 .dockercfg/
 local-data/
 *.log
+
+# rendered output — regenerate with render-pdf.sh
+haertetest-kunde.pdf

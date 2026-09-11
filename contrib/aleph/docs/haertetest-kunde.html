@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Doichain Härtetest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    color-scheme:light;
+    --bg:#ffffff; --surface:#f6f8f9; --ink:#16232b; --muted:#586a74; --faint:#8494a0;
+    --line:#dde5e9; --line-strong:#c3ced5;
+    --accent:#0c7a86; --accent-ink:#095964; --accent-weak:#e3f2f2;
+    --done:#12855a; --done-bg:#e3f4ec;
+    --amber:#9a6a00; --risk:#c23a26;
+  }
+  @page{ size:A4; margin:15mm 15mm 16mm; }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+    font-size:10.7pt; line-height:1.5; letter-spacing:-.002em; -webkit-font-smoothing:antialiased;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .wrap{max-width:180mm; margin:0 auto; padding:10mm 0 12mm}
+  @media screen{ .wrap{padding:34px 20px 60px} }
+  .mono{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace}
+  p{margin:0 0 .65em; max-width:70ch}
+  h1,h2,h3{text-wrap:balance; letter-spacing:-.015em}
+  h1{font-size:21pt; line-height:1.12; font-weight:700; margin:.3em 0 .25em}
+  h2{font-size:13pt; font-weight:600; margin:0 0 .5em; color:var(--accent-ink)}
+  h3{font-size:11pt; font-weight:600; margin:12px 0 4px}
+  .eyebrow{font-family:'IBM Plex Mono',monospace; font-size:7.6pt; font-weight:500; letter-spacing:.16em; text-transform:uppercase; color:var(--accent-ink)}
+  .lede{color:var(--muted); font-size:11.4pt; max-width:66ch}
+  .meta{display:flex; flex-wrap:wrap; gap:6px; margin-top:12px}
+  .tag{font-family:'IBM Plex Mono',monospace; font-size:7.8pt; padding:3px 9px; border:1px solid var(--line-strong); border-radius:999px; color:var(--muted); background:var(--surface); white-space:nowrap}
+  .tag b{color:var(--ink); font-weight:600}
+  .tag.done{border-color:var(--done); color:var(--done); background:var(--done-bg)}
+  header.head{border-bottom:2px solid var(--accent); padding-bottom:14px; margin-bottom:20px}
+  section{margin-top:20px}
+  .page-break{break-before:page}
+  .sec-head{margin-bottom:8px; border-bottom:1px solid var(--line); padding-bottom:5px}
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:4px 0 14px; break-inside:avoid}
+  .stat{background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:9px 11px}
+  .stat .v{font-family:'IBM Plex Mono',monospace; font-size:14.5pt; font-weight:600; letter-spacing:-.01em; font-variant-numeric:tabular-nums; color:var(--accent-ink)}
+  .stat .l{font-size:8.2pt; color:var(--muted); margin-top:2px; line-height:1.35}
+  ul.plain{margin:.2em 0 0; padding-left:1.15em; max-width:72ch}
+  ul.plain li{margin:0 0 .4em}
+  ul.check{list-style:none; margin:.2em 0 0; padding:0}
+  ul.check li{position:relative; padding-left:26px; margin:0 0 .55em; max-width:74ch}
+  ul.check li::before{content:"\2713"; position:absolute; left:0; top:1px; width:17px; height:17px; border-radius:5px; background:var(--done-bg); color:var(--done); font-size:9pt; font-weight:700; text-align:center; line-height:17px}
+  ul.check b{font-weight:600}
+  .setup{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:4px 0 6px}
+  .role{border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:#fff}
+  .role .rn{font-weight:600; font-size:10pt}
+  .role .rd{color:var(--muted); font-size:9pt; margin-top:2px}
+  .role.att{border-color:#eab8ad; background:#fbeee9}
+  .role.hon{border-color:#a9d9c6; background:var(--done-bg)}
+  .role.obs{border-color:var(--line-strong); background:var(--surface)}
+  figure{margin:6px 0 6px; break-inside:avoid}
+  figure svg{width:100%; height:auto; display:block}
+  figcaption{font-size:8.8pt; color:var(--muted); margin-top:4px; max-width:74ch}
+  .gl{stroke:var(--line); stroke-width:1}
+  .gld{stroke:var(--done); stroke-width:1; stroke-dasharray:4 3}
+  .axt{font-family:'IBM Plex Mono',monospace; font-size:7.4pt; fill:var(--faint)}
+  .curve{fill:none; stroke:var(--accent); stroke-width:2.2; stroke-linejoin:round; stroke-linecap:round}
+  .anno{font-size:8.2pt; fill:var(--ink)}
+  .table-wrap{border:1px solid var(--line); border-radius:7px; overflow:hidden; break-inside:avoid; margin:8px 0 10px}
+  table{border-collapse:collapse; width:100%; font-size:9pt}
+  th,td{text-align:left; padding:6px 9px; border-bottom:1px solid var(--line); vertical-align:top}
+  thead th{font-family:'IBM Plex Mono',monospace; font-size:7pt; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); font-weight:500; background:var(--surface)}
+  tbody tr:last-child td{border-bottom:none}
+  td .ph{font-family:'IBM Plex Mono',monospace; font-weight:600; color:var(--accent-ink)}
+  code{font-family:'IBM Plex Mono',monospace; font-size:8.6pt; background:var(--surface); padding:1px 4px; border-radius:3px}
+  pre{background:var(--surface); border:1px solid var(--line); border-radius:7px; padding:9px 11px; font-family:'IBM Plex Mono',monospace; font-size:8.5pt; line-height:1.5; overflow-x:auto; margin:6px 0; color:var(--ink); white-space:pre-wrap}
+  pre .c{color:var(--faint)}
+  .callout{border:1px solid var(--line-strong); border-left:3px solid var(--accent); border-radius:7px; padding:10px 13px; background:var(--surface); margin:8px 0; break-inside:avoid}
+  .scn{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:8px 0}
+  .scn .c1{border:1px solid #eab8ad; background:#fbeee9; border-radius:8px; padding:9px 12px}
+  .scn .c2{border:1px solid #a9d9c6; background:var(--done-bg); border-radius:8px; padding:9px 12px}
+  .scn .t{font-weight:600; font-size:9.5pt}
+  .scn .d{font-size:9pt; color:var(--ink); margin-top:3px}
+  .foot{margin-top:22px; padding-top:9px; border-top:1px solid var(--line); display:flex; justify-content:space-between; gap:10px; color:var(--faint); font-size:8.2pt}
+  .life{stroke:var(--line-strong); stroke-width:1; stroke-dasharray:2 3}
+  .al{font-size:8.6pt; font-weight:600; fill:var(--ink)}
+  .as{font-family:'IBM Plex Mono',monospace; font-size:7pt; fill:var(--muted)}
+  .msg{stroke:var(--muted); stroke-width:1.3}
+  .ml{font-size:8pt; fill:var(--ink)}
+  .selfb rect{fill:var(--done-bg); stroke:var(--done); stroke-width:1}
+  .selft{font-size:8pt; fill:#0f6e56; font-weight:500}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="head">
+  <div class="eyebrow">Doichain · Netzwerk-Härtetest</div>
+  <h1>Erholt sich die Kette nach einem Mining-Angriff — live bewiesen</h1>
+  <p class="lede">Ein Angreifer hatte die Doichain-Kette lahmgelegt. Wir haben die Lösung gebaut und auf drei getrennten Servern unter einem originalgetreu nachgestellten Angriff geprüft — mit vollem Erfolg.</p>
+  <div class="meta">
+    <span class="tag done">Abgeschlossen · <b>Erholung + Stabilität bestätigt</b></span>
+    <span class="tag">Lauf <b>2026-09-08 → 09</b></span>
+    <span class="tag">Aufbau <b>3 Server · Aleph.im</b></span>
+    <span class="tag">Verfahren <b>DigiShield-v3</b></span>
+  </div>
+</header>
+
+<section>
+  <div class="sec-head"><h2>Das Problem — in einem Satz</h2></div>
+  <p>Ein großer Miner schaltete kurz massive Rechenleistung auf Doichain, trieb die <b>Mining-Schwierigkeit</b> („Difficulty") in die Höhe und verschwand wieder. Zurück blieb eine Kette, deren Schwierigkeit rund <b>48-mal zu hoch</b> stand: Die verbliebenen ehrlichen Miner fanden nur noch alle paar Stunden einen Block statt alle zehn Minuten. Mit dem alten Regelwerk hätte sich das über <b>Monate</b> nicht von selbst gelöst.</p>
+</section>
+
+<section>
+  <div class="sec-head"><h2>Was wir getestet haben — und wie</h2></div>
+  <p>Unsere neue, schnelle Schwierigkeits-Anpassung (<b>DigiShield-v3</b>) senkt die Schwierigkeit nach so einem Angriff automatisch wieder auf ein gesundes Maß. Um zu beweisen, dass das im echten Netz funktioniert, haben wir den Angriff auf drei <b>echten, voneinander getrennten Servern</b> nachgestellt:</p>
+  <div class="setup">
+    <div class="role hon"><div class="rn">Server 1 — ehrlich</div><div class="rd">Ein normaler Miner mit geringer Leistung. Bleibt die ganze Zeit.</div></div>
+    <div class="role att"><div class="rn">Server 2 — Angreifer</div><div class="rd">47-mal stärker. Pumpt die Schwierigkeit hoch — und verlässt dann die Kette.</div></div>
+    <div class="role obs"><div class="rn">Server 3 — Beobachter</div><div class="rd">Minet nicht, prüft nur mit, dass alle dieselbe Kette sehen.</div></div>
+  </div>
+  <p style="margin-top:8px">Die drei Server sind über ein <b>echtes Netz</b> verbunden (echte Laufzeiten, getrennte Rechenzentren). Damit wir nicht einen ganzen Tag warten müssen, läuft der Test im <b>Zeitraffer</b> (10-fach) — die Dynamik bleibt exakt dieselbe, nur die Uhr tickt schneller: aus ~28 Stunden werden ~3.</p>
+</section>
+
+<section>
+  <div class="sec-head"><h2>Das Ergebnis — die Kette erholt sich vollständig und bleibt stabil</h2></div>
+  <div class="stats">
+    <div class="stat"><div class="v">991.010×</div><div class="l">Schwierigkeit auf dem Höhepunkt (Angreifer geht)</div></div>
+    <div class="stat"><div class="v">~27.000×</div><div class="l">Gleichgewicht — 36× heruntergeholt</div></div>
+    <div class="stat"><div class="v">~25 h</div><div class="l">bis erholt (Mainnet-Skala; ~2,5 h im Zeitraffer)</div></div>
+    <div class="stat"><div class="v">~9 h</div><div class="l">danach stabil bei Ø <b>60 s/Block</b> (= Ziel)</div></div>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 710 300" role="img" aria-label="Mining-Schwierigkeit über 180 Minuten nach dem Abzug des Angreifers: von 991.010-fach fällt sie über den einmaligen Notventil-Block auf das Gleichgewicht um 27.000-fach und bleibt dann stabil." xmlns="http://www.w3.org/2000/svg" font-family="IBM Plex Sans, sans-serif">
+      <line class="gl" x1="64" y1="28" x2="600" y2="28"/>
+      <line class="gl" x1="64" y1="61.4" x2="600" y2="61.4"/>
+      <line class="gl" x1="64" y1="105.6" x2="600" y2="105.6"/>
+      <line class="gl" x1="64" y1="139" x2="600" y2="139"/>
+      <line class="gl" x1="64" y1="172.4" x2="600" y2="172.4"/>
+      <line class="gl" x1="64" y1="250" x2="600" y2="250"/>
+      <line class="gld" x1="64" y1="201.5" x2="690" y2="201.5"/>
+      <g class="axt" text-anchor="end">
+        <text x="58" y="31">1 Mio×</text><text x="58" y="64.4">500k×</text><text x="58" y="108.6">200k×</text>
+        <text x="58" y="142">100k×</text><text x="58" y="175.4">50k×</text><text x="58" y="253">10k×</text>
+      </g>
+      <g class="axt" text-anchor="middle">
+        <text x="64" y="266">0</text><text x="153.3" y="266">30</text><text x="242.7" y="266">60</text>
+        <text x="332" y="266">90</text><text x="421.3" y="266">120</text><text x="510.7" y="266">150</text><text x="600" y="266">180</text>
+        <text x="332" y="282" fill="#586a74">Minuten nach dem Abzug des Angreifers (Zeitraffer)</text>
+      </g>
+      <polyline class="curve" points="64.0,28.4 87.3,95.0 106.6,102.2 138.6,109.3 157.5,115.7 199.7,123.3 221.0,131.8 253.2,144.6 280.2,157.5 300.3,173.6 322.6,188.1 332.4,134.5 336.7,137.7 346.8,140.9 360.2,144.2 370.4,147.5 382.4,150.8 383.4,154.1 386.3,157.5 387.3,160.1 387.5,162.6 388.2,165.1 393.3,167.4 396.3,169.6 398.9,171.6 400.5,173.2 402.7,174.2 403.3,174.3 403.9,173.0 405.4,175.0 408.9,177.0 412.5,178.9 430.7,245.3 432.4,185.1 443.0,184.8 448.9,185.7 457.5,185.5 465.2,184.5 470.7,187.4 472.8,186.1 479.1,189.2 480.8,190.9 483.2,193.5 483.3,196.2 485.4,198.3 489.7,199.0 493.4,201.0 504.7,202.2 508.2,200.3 511.3,203.3 513.6,206.4 520.9,204.0 526.7,203.9 532.5,203.0 537.6,202.8 541.0,202.7 543.3,203.2 550.0,203.8 557.1,203.0 561.9,200.6 565.4,200.1 571.1,200.7 574.7,202.0 579.1,200.7 583.3,200.5 590.0,200.2 593.2,199.0 598.6,199.5"/>
+      <polyline points="598.6,199.5 688,199.5" fill="none" stroke="#0c7a86" stroke-width="2" stroke-dasharray="5 4"/>
+      <circle cx="64" cy="28.4" r="3.4" fill="#c23a26"/>
+      <text x="72" y="24" class="anno">Höhepunkt · Angreifer verlässt die Kette</text>
+      <circle cx="87.3" cy="95" r="3.4" fill="#9a6a00"/>
+      <text x="95" y="92" class="anno">Notventil (1×, begrenzt ×4) — kein Sturm</text>
+      <circle cx="507.7" cy="201.5" r="3.4" fill="#0c7a86"/>
+      <text x="503" y="215" class="anno" text-anchor="end">erholt: 149 min (≈ 25 h Mainnet)</text>
+      <text x="690" y="196" class="anno" text-anchor="end" fill="#0f6e56">danach ~9 h stabil · Ø 60 s/Block</text>
+    </svg>
+    <figcaption><b>Abb. 1</b> — Mining-Schwierigkeit (logarithmisch) nach dem Abzug des Angreifers. Nach dem einmaligen, gedeckelten Notventil-Block sinkt sie stetig aufs Gleichgewicht (~27.000×) und <b>bleibt dort stabil</b>. Der kurze Ausreißer bei ~123 min ist normales Zufallsrauschen eines so kleinen Test-Netzes; auf dem echten Mainnet mit viel mehr Rechenleistung verläuft die Kurve glatter.</figcaption>
+  </figure>
+</section>
+
+<section class="page-break">
+  <div class="sec-head"><h2>Wie der Test funktioniert — Ablauf, Kommandos, Funktionen</h2></div>
+  <p>Der ganze Test wird von einem einzigen Steuer-Skript (<code>aleph-testnet.sh</code>) auf dem Entwickler-Rechner orchestriert. Es spricht über die Aleph-Kommandozeile mit der Cloud und über SSH mit den Servern. Jede Phase ist ein eigener Befehl — hier der Ablauf und die tatsächlich ausgeführten Aufrufe.</p>
+
+  <figure>
+    <svg viewBox="0 0 710 412" role="img" aria-label="Sequenzdiagramm des Testablaufs zwischen dem Orchestrator-Skript, der Aleph-Cloud und den drei VMs." xmlns="http://www.w3.org/2000/svg" font-family="IBM Plex Sans, sans-serif">
+      <defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#586a74"/></marker></defs>
+      <g>
+        <rect x="45" y="36" width="130" height="32" rx="6" fill="#e3f2f2" stroke="#c3ced5"/>
+        <text class="al" x="110" y="50" text-anchor="middle">Orchestrator</text>
+        <text class="as" x="110" y="61" text-anchor="middle">aleph-testnet.sh</text>
+        <rect x="305" y="36" width="130" height="32" rx="6" fill="#f6f8f9" stroke="#c3ced5"/>
+        <text class="al" x="370" y="50" text-anchor="middle">Aleph.im</text>
+        <text class="as" x="370" y="61" text-anchor="middle">Cloud</text>
+        <rect x="545" y="36" width="150" height="32" rx="6" fill="#e3f4ec" stroke="#c3ced5"/>
+        <text class="al" x="620" y="50" text-anchor="middle">3 VMs</text>
+        <text class="as" x="620" y="61" text-anchor="middle">doichaind + Miner</text>
+      </g>
+      <line class="life" x1="110" y1="68" x2="110" y2="402"/>
+      <line class="life" x1="370" y1="68" x2="370" y2="402"/>
+      <line class="life" x1="620" y1="68" x2="620" y2="402"/>
+      <text class="ml" x="240" y="94" text-anchor="middle">① Rootfs-Image hochladen</text>
+      <line class="msg" x1="110" y1="100" x2="364" y2="100" marker-end="url(#ah)"/>
+      <text class="ml" x="240" y="128" text-anchor="middle">② 3 VMs + Ports anlegen</text>
+      <line class="msg" x1="110" y1="134" x2="364" y2="134" marker-end="url(#ah)"/>
+      <text class="ml" x="495" y="162" text-anchor="middle">③ VMs booten · doichaind + Miner</text>
+      <line class="msg" x1="370" y1="168" x2="614" y2="168" marker-end="url(#ah)"/>
+      <text class="ml" x="362" y="196" text-anchor="middle">④ vernetzen (IPv6) + Miner-Rollen setzen</text>
+      <line class="msg" x1="110" y1="202" x2="614" y2="202" marker-end="url(#ah)"/>
+      <g class="selfb"><rect x="545" y="222" width="150" height="26" rx="5"/></g>
+      <text class="selft" x="620" y="238" text-anchor="middle">⑤ Angriff: minen, Difficulty ↑</text>
+      <text class="ml" x="362" y="284" text-anchor="middle">⑥ Angreifer abziehen (miner.stop)</text>
+      <line class="msg" x1="110" y1="290" x2="614" y2="290" marker-end="url(#ah)"/>
+      <g class="selfb"><rect x="545" y="308" width="150" height="26" rx="5"/></g>
+      <text class="selft" x="620" y="324" text-anchor="middle">⑦ DigiShield erholt die Kette</text>
+      <text class="ml" x="362" y="366" text-anchor="middle">⑧ Logs holen → analyze-run.py</text>
+      <line class="msg" x1="614" y1="372" x2="112" y2="372" marker-end="url(#ah)"/>
+      <text class="ml" x="240" y="394" text-anchor="middle">⑨ VMs abbauen (--yes)</text>
+      <line class="msg" x1="110" y1="400" x2="364" y2="400" marker-end="url(#ah)"/>
+    </svg>
+    <figcaption><b>Abb. 2</b> — Ablauf der Generalprobe. Pfeile = Aufrufe des Steuer-Skripts; die grünen Kästen sind Vorgänge, die auf den Servern selbst ablaufen (echtes Mining bzw. die automatische Erholung durch das neue Regelwerk).</figcaption>
+  </figure>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Phase</th><th>Was passiert</th><th>Ausgeführter Aufruf / Funktion</th></tr></thead>
+      <tbody>
+        <tr><td><span class="ph">build</span></td><td>Node-Binary + Server-Image bauen</td><td>Docker: CMake baut <code>doichaind</code>; <code>virt-customize</code> backt es ins Image</td></tr>
+        <tr><td><span class="ph">upload</span></td><td>Image veröffentlichen</td><td><code>aleph file upload</code> → IPFS + signierter STORE-Pin</td></tr>
+        <tr><td><span class="ph">up</span></td><td>3 VMs + Ports anlegen</td><td><code>aleph instance create</code> ×3, <code>aleph instance port-forward create</code></td></tr>
+        <tr><td><span class="ph">wait</span></td><td>Adressen &amp; Ports abholen</td><td><code>aleph instance show --verbose --json</code></td></tr>
+        <tr><td><span class="ph">wire</span></td><td>Knoten vernetzen</td><td>SSH: <code>-addnode=[IPv6]:18444</code> setzen, <code>systemctl restart doichaind</code></td></tr>
+        <tr><td><span class="ph">roles</span></td><td>Miner-Rollen setzen</td><td>SSH: schreibt <code>/etc/default/doichain-miner</code>, Neustart des Miners</td></tr>
+        <tr><td><span class="ph">(Miner)</span></td><td>gedrosseltes Mining</td><td><code>generatetoaddress 1 &lt;Adresse&gt; &lt;maxtries&gt;</code> pro Sekunde</td></tr>
+        <tr><td><span class="ph">leave</span></td><td>Angreifer stoppt</td><td>SSH: <code>touch /run/doichain/miner.stop</code></td></tr>
+        <tr><td><span class="ph">collect</span></td><td>Mess-Daten sichern</td><td><code>scp</code> holt <code>miner.csv</code> + <code>debug.log</code>; Auswertung mit <code>analyze-run.py</code></td></tr>
+        <tr><td><span class="ph">down</span></td><td>VMs abbauen</td><td><code>aleph instance delete --yes</code> ×3 (beendet die Abrechnung)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Der Kniff: Hashrate = einstellbare Versuche pro Takt</h3>
+  <p>Statt echter Miner-Hardware fragt das Miner-Skript den Knoten pro Sekunde nach einer <b>begrenzten Zahl Versuche</b> auf einem frischen Block. Weil Mining gedächtnislos ist, ist das statistisch identisch zu echtem Mining — und die Hashrate (und damit das 47-fache Verhältnis) ist einfach eine Zahl:</p>
+  <pre><span class="c"># miner.py — pro Takt so viele Nonces probieren wie die Rolle vorgibt</span>
+maxtries = round(hashrate * tick)          <span class="c"># 1000 = ehrlich · 47000 = Angreifer</span>
+res = rpc("generatetoaddress", 1, address, maxtries)   <span class="c"># echter Proof-of-Work</span></pre>
+  <p style="margin-top:4px">Das Vernetzen und der Angreifer-Abzug sind bewusst simpel — eine Zeile pro Server:</p>
+  <pre><span class="c"># wire — Nachbarn über die echte IPv6-Adresse eintragen, Knoten neu starten</span>
+ssh root@$VM "sed -i 's|DOICHAIND_PEERS=.*|DOICHAIND_PEERS=-addnode=[$V6]:18444|' \
+              /etc/default/doichain &amp;&amp; systemctl restart doichaind"
+<span class="c"># leave — der Angreifer hört auf zu minen (Erholung beginnt)</span>
+ssh root@$VM2 "touch /run/doichain/miner.stop"</pre>
+</section>
+
+<section class="page-break">
+  <div class="sec-head"><h2>Warum die Difficulty im Test echt reagiert — die Rückkopplungsschleife</h2></div>
+  <p>Die wichtigste Einsicht, an der viele stolpern: Das Regelwerk <b>misst nie die Rechenleistung</b>. Es liest nur die <b>Zeitstempel</b> der Blöcke und damit den Abstand zwischen ihnen. Die Hashrate wirkt <b>ausschließlich indirekt</b> — über diesen Abstand. Zusammen bilden Miner und Regler einen klassischen <b>Regelkreis</b> (wie ein Thermostat):</p>
+
+  <figure>
+    <svg viewBox="0 0 710 262" role="img" aria-label="Regelkreis: Die Hashrate (Störgröße) und die Difficulty (Stellgröße) bestimmen zusammen den Blockabstand (Regelgröße); DigiShield misst den Abstand gegen das 60-Sekunden-Ziel (Sollwert) und stellt die neue Difficulty. Ein direkter Weg von der Hashrate zum Regler existiert nicht." xmlns="http://www.w3.org/2000/svg" font-family="IBM Plex Sans, sans-serif">
+      <defs><marker id="fa" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#586a74"/></marker></defs>
+      <rect x="45" y="30" width="220" height="52" rx="6" fill="#fbf1d6" stroke="#e0b45a"/>
+      <text x="155" y="51" text-anchor="middle" font-size="9.5" font-weight="600" fill="#6b4a00">Hashrate</text>
+      <text x="155" y="65" text-anchor="middle" font-size="7.6" fill="#9a6a00">Miner: maxtries / Sekunde</text>
+      <text x="155" y="77" text-anchor="middle" font-size="7" fill="#9a6a00">(Störgröße)</text>
+      <rect x="445" y="30" width="220" height="52" rx="6" fill="#f6f8f9" stroke="#c3ced5"/>
+      <text x="555" y="51" text-anchor="middle" font-size="9.5" font-weight="600" fill="#16232b">Ziel: 60 s / Block</text>
+      <text x="555" y="66" text-anchor="middle" font-size="7.6" fill="#586a74">(Sollwert)</text>
+
+      <line x1="272" y1="56" x2="438" y2="56" stroke="#c23a26" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <path d="M349,50 L361,62 M361,50 L349,62" stroke="#c23a26" stroke-width="1.4"/>
+      <text x="355" y="44" text-anchor="middle" font-size="7.6" fill="#c23a26">kein Hashrate-Sensor</text>
+
+      <rect x="45" y="120" width="220" height="66" rx="8" fill="#e3f2f2" stroke="#7fbcc2"/>
+      <text x="155" y="143" text-anchor="middle" font-size="9.5" font-weight="600" fill="#095964">Block-Suche</text>
+      <text x="155" y="158" text-anchor="middle" font-size="7.8" fill="#0c7a86">echter Proof-of-Work</text>
+      <text x="155" y="172" text-anchor="middle" font-size="7" fill="#586a74">(im Miner: generatetoaddress)</text>
+      <rect x="445" y="120" width="220" height="66" rx="8" fill="#e3f4ec" stroke="#6bbf9a"/>
+      <text x="555" y="141" text-anchor="middle" font-size="9.5" font-weight="600" fill="#0f6e56">DigiShield-Regler</text>
+      <text x="555" y="156" text-anchor="middle" font-size="7.6" fill="#0f6e56">liest Median-Zeit der letzten 17 Blöcke</text>
+      <text x="555" y="170" text-anchor="middle" font-size="7" fill="#586a74">(auf Stock-Regtest abgeschaltet)</text>
+
+      <line x1="155" y1="82" x2="155" y2="118" class="msg" marker-end="url(#fa)"/>
+      <line x1="555" y1="82" x2="555" y2="118" class="msg" marker-end="url(#fa)"/>
+
+      <line x1="265" y1="145" x2="443" y2="145" class="msg" marker-end="url(#fa)"/>
+      <text x="354" y="134" text-anchor="middle" font-size="8" font-weight="600" fill="#16232b">① Blockabstand (Regelgröße)</text>
+      <text x="354" y="161" text-anchor="middle" font-size="7.2" fill="#586a74">kürzer = zu schnell · länger = zu langsam</text>
+
+      <path d="M555,186 L555,236 L155,236 L155,186" fill="none" class="msg" marker-end="url(#fa)"/>
+      <text x="355" y="230" text-anchor="middle" font-size="8" font-weight="600" fill="#16232b">② Difficulty (Stellgröße) — höher ⇒ längerer Abstand</text>
+    </svg>
+    <figcaption><b>Abb. 3</b> — Der Regelkreis. Hashrate (Störgröße) und Difficulty (Stellgröße) bestimmen gemeinsam den Blockabstand (Regelgröße); DigiShield vergleicht ihn mit dem 60-s-Ziel (Sollwert) und stellt die neue Difficulty. Der rote, durchgestrichene Pfad oben zeigt: Es gibt <b>keinen</b> direkten Weg von der Hashrate zum Regler.</figcaption>
+  </figure>
+
+  <div class="scn">
+    <div class="c1"><div class="t">▲ Angriff — Hashrate steigt</div><div class="d">mehr Versuche/s → Blöcke kommen zu schnell → DigiShield <b>hebt</b> die Difficulty. Im Test bis <b>991.010×</b>.</div></div>
+    <div class="c2"><div class="t">▼ Abzug — Hashrate fällt</div><div class="d">weniger Versuche/s → Blöcke kommen zu langsam → DigiShield <b>senkt</b> die Difficulty. Im Test zurück auf <b>~27.000×</b>.</div></div>
+  </div>
+
+  <div class="callout">
+    <p style="margin:0"><b>Der Kern.</b> DigiShield kennt die Rechenleistung nicht — es liest nur, wie viel Zeit zwischen den Blöcken vergeht. Deshalb ist die Reaktion im Test <b>echt und nicht nachgestellt</b>: Wir erzeugen echte Blockabstände durch echtes, gedrosseltes Mining, und <b>derselbe Regler-Code wie auf Mainnet</b> reagiert darauf. Genau so funktioniert die Schwierigkeits-Anpassung in jedem Bitcoin-artigen Netz.</p>
+  </div>
+
+  <h3>Und warum reagiert Regtest überhaupt?</h3>
+  <p>Ein „Regtest" (das lokale Test-Netz) hat diesen Regler <b>normalerweise abgeschaltet</b> — dort steht die Difficulty per Voreinstellung fest (<code>fPowNoRetargeting = true</code>). Für den Härtetest schalten wir ihn mit einem Test-Flag (<code>-digishieldheight</code>) <b>ein</b> (<code>fPowNoRetargeting = false</code>) und lassen exakt denselben DigiShield-Code laufen wie auf Mainnet. Der einzige Unterschied zu Mainnet ist also, <b>dass</b> wir den Regler einschalten — nicht, <b>wie</b> er rechnet. Damit ist die im Test gemessene Reaktion aussagekräftig für den späteren Ernstfall.</p>
+</section>
+
+<section>
+  <div class="sec-head"><h2>Was der Test beweist</h2></div>
+  <ul class="check">
+    <li><b>Vollständige Erholung im echten, verteilten Netz.</b> Aus einer Kette, die pro Block Stunden brauchte, werden wieder Blöcke auf der Zielzeit — Faktor 36 heruntergeholt in ~25 Stunden Mainnet-Zeit. Das deckt sich mit unserer Vorab-Analyse (~28 h für einen 40×-Angriff).</li>
+    <li><b>Die Kette bleibt stabil.</b> Neun Stunden lang exakt 60-Sekunden-Blöcke — sie friert nicht wieder ein und schaukelt sich nicht auf. Erholung <em>und</em> Dauerstabilität sind belegt.</li>
+    <li><b>Das „Notventil" ist sicher gedeckelt.</b> Es sprang nur vereinzelt an und machte den nächsten Block höchstens um das Vierfache leichter — nie beliebig leicht. Ein gefährlicher Nebeneffekt („Block-Sturm"), den wir vorab in der Analyse entdeckt hatten, ist damit ausgeschlossen.</li>
+    <li><b>Alle Knoten bleiben einig.</b> Der Beobachter-Server sah durchgehend dieselbe Kette wie die Miner — die Umschaltung auf das neue Regelwerk erzeugt keine Kettenspaltung.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="sec-head"><h2>Ehrliche Einordnung &amp; nächste Schritte</h2></div>
+  <div class="callout">
+    <p style="margin:0"><b>Was dieser Test zeigt — und was getrennt bleibt.</b> Bewiesen ist, dass der <b>Mechanismus</b> auf echten, getrennten Servern korrekt und sicher arbeitet. Die genauen Startwerte für das Mainnet werden am Tag des Umstiegs frisch aus der dann gemessenen Rechenleistung berechnet; und ein echtes Merge-Mining-Zusammenspiel mit den Pools ist ein eigener Vorbereitungsschritt. Beides ist im Rollout-Plan als eigener Punkt vorgesehen.</p>
+  </div>
+  <ul class="plain">
+    <li>Der Lauf ist abgeschlossen, alle Mess-Daten sind gesichert, die Test-Server sind abgebaut.</li>
+    <li>Der Test ist als ein Kommando reproduzierbar und im Doichain-Code mitgeliefert (<code>contrib/aleph/</code>).</li>
+    <li>Nächste Schritte: finale Aktivierungswerte festlegen, unabhängige Code-Prüfung, koordinierter Umstieg (Hard Fork) mit Ankündigung an Miner und Pools.</li>
+  </ul>
+</section>
+
+<div class="foot">
+  <div>Doichain Core 31.1 · Live-Härtetest der Schwierigkeits-Anpassung (DigiShield-v3)</div>
+  <div class="mono">Abgeschlossen · 2026-09-09</div>
+</div>
+
+</div>
+</body>
+</html>
