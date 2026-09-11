@@ -160,10 +160,20 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation delay
 
-        // Pinned to the last pre-relaunch block 431016 (2026-09-11, from a synced node,
-        // matches the public explorer).  nMinimumChainWork = its chainwork (anti-DoS
-        // header floor); defaultAssumeValid = its hash (skip script checks up to it).
-        consensus.nMinimumChainWork = uint256{"00000000000000000000000000000000000000000002bef1dd2f4acd13484a70"};
+        // defaultAssumeValid is the last pre-relaunch block 431016 (2026-09-11, taken
+        // from a synced node, matches the public explorer): script checks are skipped
+        // up to it.
+        //
+        // nMinimumChainWork is deliberately NOT the tip's chainwork but that of block
+        // 400000, i.e. ~31k blocks of slack. It is the anti-DoS floor that the headers
+        // presync must clear before a chain is stored. Pinning it to the exact tip left
+        // zero slack: presync ends on a batch boundary somewhere short of the tip
+        // (observed 410937-422937 depending on peer), never reached the threshold, and
+        // every peer was dropped with "outbound peer headers chain has insufficient
+        // work" -- 90 connects / 100 disconnects in a few minutes and a fresh node that
+        // never got past height 0. Upstream sets this to a block well behind the tip for
+        // the same reason. 400000 still is an astronomically high forgery floor.
+        consensus.nMinimumChainWork = uint256{"00000000000000000000000000000000000000000000ddad217da2329b6043b3"};
         consensus.defaultAssumeValid = uint256{"4f5e8c0e4efb3504f8923ea175e4e5e688963819dcfbe33cc7f5a28c33616823"};
 
         consensus.nAuxpowChainId = 0x0002;
