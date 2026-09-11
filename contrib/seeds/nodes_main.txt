@@ -7,6 +7,14 @@
 # These nodes were observed serving Doichain mainnet on 2026-09-11 and each one
 # answered on 8338 when this list was written. Regenerate from the live network
 # (contrib/seeds/README.md) once a DNS seed is producing usable data again.
+#
+# The first entry is deliberate and, for now, load-bearing. Every other node in
+# this file -- and every address dnsseed.doichain.org hands out -- still follows
+# the pre-fork rules, so they can carry a new node only as far as 431016: the
+# blocks above that on their chain violate DigiShield and are rejected. Without
+# a reachable DigiShield peer in the list, a fresh node syncs to the fork point
+# and stops there. Drop this entry once other nodes serve the new chain.
+178.104.112.142:8338
 2.28.75.43:8338
 94.130.57.196:8338
 116.203.99.217:8338
