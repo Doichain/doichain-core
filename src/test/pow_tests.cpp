@@ -251,9 +251,17 @@ BOOST_AUTO_TEST_CASE(get_next_work_lower_limit_actual)
     unsigned int expected_nbits = 0x1c0168fdU;
     BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus()), expected_nbits);
     BOOST_CHECK(PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
-    // Test that reducing nbits further would not be a PermittedDifficultyTransition.
+    /* Upstream asserts here that reducing nbits further is rejected. On Doichain it
+       is not: below DoiPowCheckHeight the nBits rule is not enforced at all — the
+       chain launched with the difficulty check disabled for the premine, and the
+       real chain breaks the legacy transition bounds at height 2016 (0x1f00ffff ->
+       0x1e063102). Enforcing the bounds there stops headers presync at that block
+       and no fresh node can ever sync past it.
+       The restrictive behaviour is still covered, by digishield_permitted_transition,
+       which exercises the heights where the rule actually applies. */
     unsigned int invalid_nbits = expected_nbits-1;
-    BOOST_CHECK(!PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, invalid_nbits));
+    BOOST_CHECK(pindexLast.nHeight+1 < chainParams->GetConsensus().DoiPowCheckHeight);
+    BOOST_CHECK(PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, invalid_nbits));
 }
 
 /* Test the constraint on the upper bound for actual time taken */
@@ -268,9 +276,11 @@ BOOST_AUTO_TEST_CASE(get_next_work_upper_limit_actual)
     unsigned int expected_nbits = 0x1d00e1fdU;
     BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus()), expected_nbits);
     BOOST_CHECK(PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
-    // Test that increasing nbits further would not be a PermittedDifficultyTransition.
+    /* See get_next_work_lower_limit_actual: below DoiPowCheckHeight Doichain does not
+       enforce the nBits rule, so the transition is permitted rather than rejected. */
     unsigned int invalid_nbits = expected_nbits+1;
-    BOOST_CHECK(!PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, invalid_nbits));
+    BOOST_CHECK(pindexLast.nHeight+1 < chainParams->GetConsensus().DoiPowCheckHeight);
+    BOOST_CHECK(PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, invalid_nbits));
 }
 
 BOOST_AUTO_TEST_CASE(CheckProofOfWork_test_negative_target)
