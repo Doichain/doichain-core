@@ -45,6 +45,31 @@ void ReadRegTestArgs(const ArgsManager& args, CChainParams::RegTestOptions& opti
 {
     if (auto value = args.GetBoolArg("-fastprune")) options.fastprune = *value;
     if (HasTestOption(args, "bip94")) options.enforce_bip94 = true;
+    if (args.IsArgSet("-digishieldheight")) {
+        const auto height{ToIntegral<int>(args.GetArg("-digishieldheight", ""))};
+        if (!height || *height < 0) {
+            throw std::runtime_error(strprintf("Invalid height (%s) for -digishieldheight=<n>.", args.GetArg("-digishieldheight", "")));
+        }
+        options.digishield_height = *height;
+    }
+    if (args.IsArgSet("-digishieldresetbits")) {
+        // Locale-independent hex parse (no std::stoul): exactly 8 hex digits, big-endian nBits.
+        const std::string val{args.GetArg("-digishieldresetbits", "")};
+        const auto bytes{TryParseHex<uint8_t>(val)};
+        if (!bytes || bytes->size() != 4) {
+            throw std::runtime_error(strprintf("Invalid value (%s) for -digishieldresetbits=<nBits>: expected 8 hex digits.", val));
+        }
+        const auto& b{*bytes};
+        options.digishield_reset_bits = (uint32_t{b[0]} << 24) | (uint32_t{b[1]} << 16) | (uint32_t{b[2]} << 8) | uint32_t{b[3]};
+    }
+    if (args.GetBoolArg("-digishieldstrict", false)) options.digishield_strict = true;
+    if (args.IsArgSet("-powtargetspacing")) {
+        const auto spacing{ToIntegral<int64_t>(args.GetArg("-powtargetspacing", ""))};
+        if (!spacing || *spacing <= 0) {
+            throw std::runtime_error(strprintf("Invalid value (%s) for -powtargetspacing=<seconds>.", args.GetArg("-powtargetspacing", "")));
+        }
+        options.pow_target_spacing = *spacing;
+    }
 
     for (const std::string& arg : args.GetArgs("-testactivationheight")) {
         const auto found{arg.find('@')};

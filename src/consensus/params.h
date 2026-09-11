@@ -189,6 +189,12 @@ struct Params {
      *  from this height onward; older blocks stay valid.  (The block hash is
      *  still checked against its claimed target at every height.) */
     int DoiPowCheckHeight;
+    /** Doichain: block height from which the DigiShield-v3 per-block difficulty
+     *  adjustment (ported from Zcash) replaces the legacy 2016-block retarget, to
+     *  recover quickly from miner hash-attacks.  Historic blocks below this height
+     *  keep the original retarget.  Defaults to "never" so chains that do not opt
+     *  in are unaffected. */
+    int DoiDifficultyHeight{std::numeric_limits<int>::max()};
     /** Don't warn about unknown BIP 9 activations below this height.
      * This prevents us from warning about the CSV and segwit activations. */
     int MinBIP9WarningHeight;
@@ -210,6 +216,27 @@ struct Params {
         return std::chrono::seconds{nPowTargetSpacing};
     }
     int64_t DifficultyAdjustmentInterval() const { return nPowTargetTimespan / nPowTargetSpacing; }
+    /** Doichain DigiShield-v3 parameters (ported from Zcash), used at and above
+     *  DoiDifficultyHeight.  Defaults match Zcash. */
+    int64_t nPowAveragingWindow{17};   //!< blocks averaged per retarget
+    int64_t nPowMaxAdjustUp{16};       //!< max upward step per block, percent
+    int64_t nPowMaxAdjustDown{32};     //!< max downward step per block, percent
+    /** Emergency valve: after this many seconds without a block, the next block may
+     *  be easier than the DigiShield target (see nDoiMinDifficultyValveFactor), so a
+     *  stuck chain keeps making progress.  0 disables the valve. */
+    int64_t nDoiMinDifficultyGap{0};
+    /** How many times easier a valve block may be than the computed target.  Bounded
+     *  on purpose: dropping to powLimit (~2^50 easier on Doichain) would poison the
+     *  averaging window and trigger a storm of ~1500 near-instant blocks. */
+    int64_t nDoiMinDifficultyValveFactor{4};
+    /** One-time difficulty reset at DoiDifficultyHeight: the first
+     *  (nPowAveragingWindow + median-time span) blocks use this compact target, so
+     *  DigiShield starts from a clean post-fork window rather than the stuck pre-fork
+     *  one.  Derive from the hashrate measured at rollout.  0 = no reset. */
+    unsigned int nDoiDifficultyResetBits{0};
+    int64_t AveragingWindowTimespan() const { return nPowAveragingWindow * nPowTargetSpacing; }
+    int64_t MinActualTimespan() const { return (AveragingWindowTimespan() * (100 - nPowMaxAdjustUp)) / 100; }
+    int64_t MaxActualTimespan() const { return (AveragingWindowTimespan() * (100 + nPowMaxAdjustDown)) / 100; }
     /** The best chain should have at least this much work */
     uint256 nMinimumChainWork;
     /** By default assume that the signatures in ancestors of this block are valid */

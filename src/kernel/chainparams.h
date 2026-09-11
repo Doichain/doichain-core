@@ -178,6 +178,10 @@ public:
         std::unordered_map<Consensus::BuriedDeployment, int> activation_heights{};
         bool fastprune{false};
         bool enforce_bip94{false};
+        std::optional<int> digishield_height{}; // Doichain: activate DigiShield-v3 DAA from this height (regtest-only)
+        std::optional<uint32_t> digishield_reset_bits{}; // Doichain: reset-window compact target at activation (regtest-only)
+        bool digishield_strict{false}; // Doichain: disallow min-difficulty blocks so the headers-sync bound is enforced (regtest-only)
+        std::optional<int64_t> pow_target_spacing{}; // Doichain: block target in seconds, to compress DAA experiments (regtest-only)
     };
 
     static std::unique_ptr<const CChainParams> RegTest(const RegTestOptions& options);

@@ -126,8 +126,20 @@ public:
         /* Doichain activates CSV/Segwit with BIP16.  */
         consensus.CSVHeight = 216500;
         consensus.SegwitHeight = 216500;
-        consensus.DoiOwnershipHeight = 450000; // TODO(doichain): finalize before rollout (above current tip ~431k)
-        consensus.DoiPowCheckHeight = 450000; // TODO(doichain): finalize; enforce correct difficulty from here on
+        consensus.DoiOwnershipHeight = 431017; // rollout flag-day (tip 431016 + 1): strict name_doi ownership on
+        // Rollout flag-day = tip + 1 (mainnet tip was 431016 on 2026-09-11, confirmed
+        // against a synced node + explorer).  Activation MUST be tip+1: the stuck chain
+        // (~202 PH/s => ~28.2e9 difficulty) cannot grind even one old-rules block with the
+        // ~30 TH/s available (~47 days/block), so the upgrade is coordinated OFF-chain
+        // (everyone installs 31.1.1 first) rather than by an on-chain grace period.
+        consensus.DoiDifficultyHeight = 431017; // anti-hash-attack DAA (DigiShield-v3) activates here
+        consensus.DoiPowCheckHeight = consensus.DoiDifficultyHeight; // enforce correct nBits from the same height
+        // One-time reset at DoiDifficultyHeight, sized for the ~30 TH/s available at
+        // relaunch: difficulty 4,190,963 for 10-min blocks (nBits 0x1a0400cd).
+        // Re-measure the real hashrate right before launch and set slightly on the easy
+        // side (10/20/50/100 TH/s => 0x1a0c0269 / 0x1a060134 / 0x1a0266e1 / 0x1a013370).
+        consensus.nDoiDifficultyResetBits = 0x1a0400cd;
+        consensus.nDoiMinDifficultyGap = 6 * 10 * 60; // 1h emergency valve, bounded by nDoiMinDifficultyValveFactor (x4)
         consensus.MinBIP9WarningHeight = 218500; // segwit activation height + miner confirmation window
         consensus.powLimit = uint256{"0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
@@ -148,10 +160,21 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation delay
 
-        // TODO(doichain): set to a real recent Doichain mainnet chainwork / best-block
-        // hash before rollout (currently disabled -> full validation from genesis).
-        consensus.nMinimumChainWork = uint256{"0000000000000000000000000000000000000000000000000000000000000000"};
-        consensus.defaultAssumeValid = uint256{"0000000000000000000000000000000000000000000000000000000000000000"};
+        // defaultAssumeValid is the last pre-relaunch block 431016 (2026-09-11, taken
+        // from a synced node, matches the public explorer): script checks are skipped
+        // up to it.
+        //
+        // nMinimumChainWork is deliberately NOT the tip's chainwork but that of block
+        // 400000, i.e. ~31k blocks of slack. It is the anti-DoS floor that the headers
+        // presync must clear before a chain is stored. Pinning it to the exact tip left
+        // zero slack: presync ends on a batch boundary somewhere short of the tip
+        // (observed 410937-422937 depending on peer), never reached the threshold, and
+        // every peer was dropped with "outbound peer headers chain has insufficient
+        // work" -- 90 connects / 100 disconnects in a few minutes and a fresh node that
+        // never got past height 0. Upstream sets this to a block well behind the tip for
+        // the same reason. 400000 still is an astronomically high forgery floor.
+        consensus.nMinimumChainWork = uint256{"00000000000000000000000000000000000000000000ddad217da2329b6043b3"};
+        consensus.defaultAssumeValid = uint256{"4f5e8c0e4efb3504f8923ea175e4e5e688963819dcfbe33cc7f5a28c33616823"};
 
         consensus.nAuxpowChainId = 0x0002;
         consensus.nAuxpowStartHeight = 1;
@@ -286,6 +309,8 @@ public:
         consensus.SegwitHeight = 1000;
         consensus.DoiOwnershipHeight = 300000; // TODO(doichain): finalize (above current testnet tip)
         consensus.DoiPowCheckHeight = 300000; // TODO(doichain): finalize (above current testnet tip)
+        consensus.DoiDifficultyHeight = 300000; // TODO(doichain): set low for the multi-node DAA test so activation is reached
+        consensus.nDoiMinDifficultyGap = 6 * 10 * 60; // 1h emergency valve
         consensus.MinBIP9WarningHeight = 1000; // segwit activation height + miner confirmation window
         consensus.powLimit = uint256{"000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
@@ -731,6 +756,27 @@ public:
                 consensus.CSVHeight = int{height};
                 break;
             }
+        }
+
+        // Doichain: regtest-only knobs for DAA experiments.  -powtargetspacing compresses
+        // time (the DigiShield window, valve gap and old retarget interval all scale with
+        // it); -digishieldstrict disallows min-difficulty blocks so that
+        // PermittedDifficultyTransition is enforced between peers, as on mainnet.
+        if (opts.pow_target_spacing) {
+            consensus.nPowTargetSpacing = *opts.pow_target_spacing;
+            consensus.nPowTargetTimespan = *opts.pow_target_spacing * 144; // keep the 144-block regtest interval
+        }
+        if (opts.digishield_strict) consensus.fPowAllowMinDifficultyBlocks = false;
+
+        // Doichain: -digishieldheight=<n> activates the DigiShield-v3 DAA from block <n>
+        // on regtest and turns on retargeting, so the difficulty algorithm can be tested
+        // end-to-end. Unset (the default) keeps regtest's fixed difficulty, so existing
+        // functional tests are unaffected.
+        if (opts.digishield_height) {
+            consensus.DoiDifficultyHeight = *opts.digishield_height;
+            consensus.fPowNoRetargeting = false;
+            consensus.nDoiMinDifficultyGap = 6 * consensus.nPowTargetSpacing; // emergency valve (1h), matches mainnet
+            if (opts.digishield_reset_bits) consensus.nDoiDifficultyResetBits = *opts.digishield_reset_bits;
         }
 
         for (const auto& [deployment_pos, version_bits_params] : opts.version_bits_parameters) {

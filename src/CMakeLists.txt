@@ -306,13 +306,13 @@ if(WITH_EMBEDDED_ASMAP)
   )
 endif()
 
-# Namecoin wrapper executable that can call other executables.
+# Doichain wrapper executable that can call other executables.
 if(BUILD_BITCOIN_BIN)
-  add_executable(namecoin bitcoin.cpp)
-  add_windows_resources(namecoin bitcoin-res.rc)
-  add_windows_application_manifest(namecoin)
-  target_link_libraries(namecoin core_interface bitcoin_common bitcoin_util)
-  install_binary_component(namecoin)
+  add_executable(doichain bitcoin.cpp)
+  add_windows_resources(doichain bitcoin-res.rc)
+  add_windows_application_manifest(doichain)
+  target_link_libraries(doichain core_interface bitcoin_common bitcoin_util)
+  install_binary_component(doichain)
 endif()
 
 # Bitcoin Core bitcoind.
