@@ -404,6 +404,7 @@ BASE_SCRIPTS = [
     'name_byhash.py',
     # FIXME: Fix for descriptor wallets:
     #'name_deterministic_salt.py',
+    'name_doi.py',
     'name_encodings.py',
     'name_expiration.py',
     'name_immature_inputs.py',

@@ -577,6 +577,14 @@ UniValue NameOpToUniv (const CNameScript& nameOp)
                               ConfiguredValueEncoding ());
         break;
 
+      case OP_NAME_DOI:
+        result.pushKV ("op", "name_doi");
+        AddEncodedNameToUniv (result, "name", nameOp.getOpName (),
+                              ConfiguredNameEncoding ());
+        AddEncodedNameToUniv (result, "value", nameOp.getOpValue (),
+                              ConfiguredValueEncoding ());
+        break;
+
       default:
         assert (false);
     }

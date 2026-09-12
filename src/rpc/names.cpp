@@ -874,6 +874,9 @@ name_pending ()
             case OP_NAME_UPDATE:
               obj.pushKV ("op", "name_update");
               break;
+            case OP_NAME_DOI:
+              obj.pushKV ("op", "name_doi");
+              break;
             default:
               assert (false);
             }
