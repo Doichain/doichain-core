@@ -64,13 +64,26 @@ class NameImmatureInputsTest (NameTestFramework):
     op = {"op": "name_firstupdate", "name": "b", "value": "value",
           "rand": new[1]}
     txRaw = self.nodes[0].namerawtransaction (txRaw, 0, op)['hex']
-    txRaw = self.nodes[0].fundrawtransaction (txRaw)['hex']
+    # Pay a clearly higher feerate than the name_new.  That makes the mempool
+    # linearisation put both transactions into a single chunk, which is the
+    # situation that used to lose the name_new as well:  the block assembler
+    # rejected the whole chunk because the name_firstupdate is not minable yet,
+    # and Skip() then barred the rest of the cluster for this block, so the node
+    # produced an empty block (Doichain/doichain-core#3).  With an equal feerate
+    # the two stay in separate chunks and the bug does not show, which is why it
+    # used to appear only in a few percent of runs.
+    txRaw = self.nodes[0].fundrawtransaction (txRaw, {"fee_rate": 50})['hex']
     signed = self.nodes[0].signrawtransactionwithwallet (txRaw)
     assert signed['complete']
     first = self.nodes[0].sendrawtransaction (signed['hex'])
 
     assert_equal (set ([new[0], first]), set (self.nodes[0].getrawmempool ()))
-    self.nodes[0].getblocktemplate ({'rules': ['segwit']})
+
+    # The name_new is minable right now, the name_firstupdate spending it is
+    # not.  The template must therefore contain exactly the name_new.
+    tmpl = self.nodes[0].getblocktemplate ({'rules': ['segwit']})
+    assert_equal ([new[0]], [t['txid'] for t in tmpl['transactions']])
+
     self.generate (self.nodes[0], 1)
     assert_equal ([first], self.nodes[0].getrawmempool ())
     self.generate (self.nodes[0], 11)

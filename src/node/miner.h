@@ -120,6 +120,10 @@ private:
       * This check should always succeed, and is here
       * only as an extra check in case of a bug */
     bool TestChunkTransactions(const std::vector<CTxMemPoolEntryRef>& txs) const;
+    /** Number of transactions at the start of the chunk that may be included in a block.
+     *  Chunks are reported in the cluster's linearization order, which TxGraph keeps
+     *  topological, so any prefix is ancestor-complete and minable on its own. */
+    size_t IncludableChunkPrefix(const std::vector<CTxMemPoolEntryRef>& txs) const;
 
     /**
      * Verify if a tx can be added from a Namecoin perspective.  This may not

@@ -257,15 +257,29 @@ bool BlockAssembler::TestChunkBlockLimits(FeePerWeight chunk_feerate, int64_t ch
 // - Namecoin maturity conditions
 bool BlockAssembler::TestChunkTransactions(const std::vector<CTxMemPoolEntryRef>& txs) const
 {
+    return IncludableChunkPrefix(txs) == txs.size();
+}
+
+/* Namecoin deliberately accepts a name_firstupdate into the mempool while its name_new is
+   still immature or even unconfirmed (namecoin/namecoin-core#50).  Such a transaction cannot
+   be mined for up to MIN_FIRSTUPDATE_DEPTH blocks, but it shares a mempool cluster with the
+   name_new it spends -- which is minable right away.  Rejecting the chunk as a whole therefore
+   threw away the minable parent as well, and because SkipBuilderChunk() bars every further
+   chunk of that cluster, the node produced an empty block (Doichain/doichain-core#3).
+   Reporting the length of the includable prefix lets addChunks() mine what it can. */
+size_t BlockAssembler::IncludableChunkPrefix(const std::vector<CTxMemPoolEntryRef>& txs) const
+{
+    size_t prefix = 0;
     for (const auto tx : txs) {
         if (!TxAllowedForNamecoin(tx.get().GetTx())) {
-            return false;
+            break;
         }
         if (!IsFinalTx(tx.get().GetTx(), nHeight, m_lock_time_cutoff)) {
-            return false;
+            break;
         }
+        ++prefix;
     }
-    return true;
+    return prefix;
 }
 
 bool
@@ -382,15 +396,51 @@ void BlockAssembler::addChunks()
         }
 
         // Check to see if this chunk will fit.
-        if (!TestChunkBlockLimits(chunk_feerate, chunk_sig_ops) || !TestChunkTransactions(selected_transactions) || !DbLockLimitOk(selected_transactions)) {
-            // This chunk won't fit, so we skip it and will try the next best one.
+        const size_t includable_prefix = IncludableChunkPrefix(selected_transactions);
+        if (!TestChunkBlockLimits(chunk_feerate, chunk_sig_ops) || includable_prefix != selected_transactions.size() || !DbLockLimitOk(selected_transactions)) {
+            /* The chunk as a whole cannot be included.  If it was held back only by a
+               transaction that is not minable yet, the ones before it still are: chunks
+               arrive in topological order, so the prefix is ancestor-complete.  Including
+               it keeps a minable name_new out of the bin -- and with it the remainder of
+               the cluster, which Skip() excludes for the rest of this block
+               (Doichain/doichain-core#3). */
+            bool included_prefix = false;
+            if (includable_prefix > 0 && includable_prefix < selected_transactions.size()) {
+                const std::vector<CTxMemPoolEntry::CTxMemPoolEntryRef> prefix(
+                    selected_transactions.begin(),
+                    selected_transactions.begin() + includable_prefix);
+                int64_t prefix_fee{0};
+                int32_t prefix_weight{0};
+                int64_t prefix_sig_ops{0};
+                for (const auto& tx : prefix) {
+                    prefix_fee += tx.get().GetFee();
+                    prefix_weight += tx.get().GetTxWeight();
+                    prefix_sig_ops += tx.get().GetSigOpCost();
+                }
+                if (TestChunkBlockLimits(FeePerWeight{prefix_fee, prefix_weight}, prefix_sig_ops)
+                        && DbLockLimitOk(prefix)) {
+                    for (const auto& tx : prefix) {
+                        AddToBlock(tx);
+                    }
+                    included_prefix = true;
+                    /* Deliberately no m_package_feerates entry: the chunk feerate describes
+                       a package that was not included as such. */
+                }
+            }
+            // The rest of this chunk won't fit, so we skip it and will try the next best one.
             m_mempool->SkipBuilderChunk();
-            ++nConsecutiveFailed;
 
-            if (nConsecutiveFailed > MAX_CONSECUTIVE_FAILURES && nBlockWeight +
-                    BLOCK_FULL_ENOUGH_WEIGHT_DELTA > m_options.nBlockMaxWeight) {
-                // Give up if we're close to full and haven't succeeded in a while
-                return;
+            if (included_prefix) {
+                // We made progress, so this is not a consecutive failure.
+                nConsecutiveFailed = 0;
+            } else {
+                ++nConsecutiveFailed;
+
+                if (nConsecutiveFailed > MAX_CONSECUTIVE_FAILURES && nBlockWeight +
+                        BLOCK_FULL_ENOUGH_WEIGHT_DELTA > m_options.nBlockMaxWeight) {
+                    // Give up if we're close to full and haven't succeeded in a while
+                    return;
+                }
             }
         } else {
             m_mempool->IncludeBuilderChunk();
