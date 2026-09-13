@@ -279,24 +279,29 @@ class TestNode():
 
         self.use_v2transport = "-v2transport=1" in extra_args or (self.default_to_v2 and "-v2transport=0" not in extra_args)
 
-        # Set the value of -minrelaytxfee and -mintxfee to the defaults used
-        # in upstream Bitcoin (rather than the one from Namecoin) unless an
-        # explicit value is given.  This makes sure that tx fees hardcoded in
-        # some tests are adequate and do not need changes for Namecoin.
+        # Set the value of -minrelaytxfee, -mintxfee and -consolidatefeerate
+        # to the defaults used in upstream Bitcoin (rather than the one from
+        # Namecoin) unless an explicit value is given.  This makes sure that
+        # tx fees hardcoded in some tests are adequate and do not need changes
+        # for Namecoin.
         explicit_fees = set ()
-        fee_args = ["-minrelaytxfee", "-mintxfee"]
+        fee_defaults = {
+            "-minrelaytxfee": "0.00001",   # 1000 sat/kvB
+            "-mintxfee": "0.00001",        # 1000 sat/kvB
+            "-consolidatefeerate": "0.0001",# 10000 sat/kvB
+        }
         for arg in extra_args:
-            for fee_arg in fee_args:
+            for fee_arg in fee_defaults:
                 if arg.startswith (fee_arg):
                     explicit_fees.add (fee_arg)
-        for fee_arg in fee_args:
+        for fee_arg, fee_default in fee_defaults.items():
             if fee_arg in explicit_fees:
                 continue
 
             # There is some extra handling of -wallet arguments at the end
             # of extra_args, so we add ours at the beginning to not mess with
             # the way upstream works.
-            extra_args = ["%s=0.00001" % fee_arg] + extra_args
+            extra_args = ["%s=%s" % (fee_arg, fee_default)] + extra_args
 
         # Add a new stdout and stderr file each time bitcoind is started
         if stderr is None:
