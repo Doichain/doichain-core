@@ -375,7 +375,8 @@ std::string ScriptToAsmStr(const CScript& script, const bool fAttemptSighashDeco
             if (vch.size() <= static_cast<std::vector<unsigned char>::size_type>(4)) {
                 if ((lastOpcode == OP_NAME_NEW
                       || lastOpcode == OP_NAME_UPDATE
-                      || lastOpcode == OP_NAME_FIRSTUPDATE)
+                      || lastOpcode == OP_NAME_FIRSTUPDATE
+                      || lastOpcode == OP_NAME_DOI)
                     && !vch.empty()) {
                       str += HexStr(vch);
                 } else {
