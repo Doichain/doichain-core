@@ -3034,6 +3034,13 @@ void PeerManagerImpl::ProcessHeadersMessage(CNode& pfrom, Peer& peer,
         }
     }
 
+    // Doichain: remember whether the message *as received* was maxed out, judged
+    // by IsHeadersListMax() -- AuxPoW batches hit the byte cap at ~1792 entries,
+    // long before max_headers_result. It has to be captured here, because the
+    // headers-sync state machine below may replace `headers` with the batch it
+    // releases from its REDOWNLOAD buffer.
+    const bool headers_list_max{IsHeadersListMax(pfrom, headers)};
+
     const CBlockIndex *pindexLast = nullptr;
 
     // We'll set already_validated_work to true if these headers are
@@ -3153,7 +3160,12 @@ void PeerManagerImpl::ProcessHeadersMessage(CNode& pfrom, Peer& peer,
         }
     }
 
-    UpdatePeerStateForReceivedHeaders(pfrom, peer, *pindexLast, received_new_header, nCount == m_opts.max_headers_result);
+    // Doichain: byte-aware, like the other "was this list maxed out?" decisions.
+    // With the raw count every byte-capped AuxPoW batch looked like the peer's
+    // last one, so during IBD the peer was disconnected for "insufficient work"
+    // right after each batch released from REDOWNLOAD -- a fresh node gained
+    // ~1800 headers per connection and churned through its peers.
+    UpdatePeerStateForReceivedHeaders(pfrom, peer, *pindexLast, received_new_header, headers_list_max);
 
     // Consider immediately downloading blocks.
     HeadersDirectFetchBlocks(pfrom, peer, *pindexLast);
