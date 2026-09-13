@@ -44,6 +44,17 @@ static feebumper::Result PreconditionChecks(const CWallet& wallet, const CWallet
         return feebumper::Result::WALLET_ERROR;
     }
 
+    // Doichain: CreateRateBumpTransaction() rebuilds the replacement from the
+    // plain destinations of the original outputs, so a name prefix does not
+    // survive (see the FIXME there).  A name_doi whose name output and change
+    // both pay to this wallet is even merged into a single change output: the
+    // replacement is a valid plain payment that relays and confirms, and the
+    // registration silently vanishes -- which happened on mainnet.  Refuse.
+    if (wtx.tx->IsNamecoin()) {
+        errors.emplace_back(Untranslated("Transaction contains a name operation; bumping its fee would strip the name"));
+        return feebumper::Result::WALLET_ERROR;
+    }
+
     if (require_mine) {
         // check that original tx consists entirely of our inputs
         // if not, we can't bump the fee, because the wallet has no way of knowing the value of the other inputs (thus the fee)
