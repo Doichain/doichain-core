@@ -24,6 +24,10 @@
 # David Reband; they are adopted here rather than kept in a second file with the
 # same name.
 #
+# Part three pins down that fee bumping refuses a name transaction: bumpfee
+# rebuilt the replacement without the name prefix and turned a mainnet
+# registration into a plain payment.
+#
 # Deliberately NOT adopted from that file, because they encode decisions taken
 # the other way (see the audit review):
 #
@@ -70,6 +74,7 @@ class NameDoiTest (NameTestFramework):
     self.test_update ()
     self.test_registration_without_name_input ()
     self.test_reregistration_after_expiry ()
+    self.test_bumpfee_refused ()
 
     # Runs last: it disconnects the two nodes and rebuilds the chain.
     self.test_reorg ()
@@ -237,6 +242,43 @@ class NameDoiTest (NameTestFramework):
 
     # And it really left the first wallet.
     assert_equal (node.name_show (name)['ismine'], False)
+
+  def test_bumpfee_refused (self):
+    """
+    Fee bumping has to refuse a name transaction.  bumpfee and psbtbumpfee
+    rebuild the replacement from the plain destinations of the original
+    outputs, which strips the name prefix.  For a name_doi whose name output
+    and change both pay to the wallet, both even count as change and are merged
+    into a single output: the replacement is a valid plain payment that relays
+    and confirms, and the registration is gone.  That happened on mainnet with a
+    v31.1.4 test registration whose fee had been too low to relay.
+    """
+
+    self.log.info ("refusing to bump the fee of a name transaction")
+    node = self.node
+    name = "e/bumped"
+
+    # A registration without a name input, as in the mainnet case.
+    txid = node.name_doi (name, "registration")
+    for bump in [node.bumpfee, node.psbtbumpfee]:
+      assert_raises_rpc_error (-4, "Transaction contains a name operation",
+                               bump, txid)
+
+    # The original is untouched: still pending, still carrying the name.
+    pending = [p for p in node.name_pending () if p["name"] == name]
+    assert_equal (len (pending), 1)
+    assert_equal (pending[0]["txid"], txid)
+    assert_equal (pending[0]["op"], "name_doi")
+    self.generate (node, 1)
+    assert_equal (node.name_show (name)["value"], "registration")
+
+    # An update spending the name output is refused just the same.
+    txid = node.name_doi (name, "update")
+    for bump in [node.bumpfee, node.psbtbumpfee]:
+      assert_raises_rpc_error (-4, "Transaction contains a name operation",
+                               bump, txid)
+    self.generate (node, 1)
+    assert_equal (node.name_show (name)["value"], "update")
 
   def test_reorg (self):
     """
