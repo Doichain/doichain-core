@@ -1,24 +1,32 @@
 # Doichain mainnet fixed seeds.
 #
-# The previous contents of this file were inherited unchanged from namecoin-core:
-# 44 of 49 entries pointed at port 8334, which is Namecoin's P2P port, not
-# Doichain's 8338. They were therefore useless as seeds for this chain.
+# The contents inherited from namecoin-core pointed at Namecoin nodes: 44 of 49
+# entries used port 8334, Namecoin's P2P port, not Doichain's 8338. They were
+# replaced on 2026-09-11.
 #
-# These nodes were observed serving Doichain mainnet on 2026-09-11 and each one
-# answered on 8338 when this list was written. Regenerate from the live network
-# (contrib/seeds/README.md) once a DNS seed is producing usable data again.
+# That first replacement had to lean on a single node, because at the time every
+# other reachable node still followed the pre-fork rules and could carry a new
+# node only as far as block 431016. The network has since moved to the DigiShield
+# chain, so that entry is no longer needed and has been dropped, as its comment
+# anticipated.
 #
-# The first entry is deliberate and, for now, load-bearing. Every other node in
-# this file -- and every address dnsseed.doichain.org hands out -- still follows
-# the pre-fork rules, so they can carry a new node only as far as 431016: the
-# blocks above that on their chain violate DigiShield and are rejected. Without
-# a reachable DigiShield peer in the list, a fresh node syncs to the fork point
-# and stops there. Drop this entry once other nodes serve the new chain.
-178.104.112.142:8338
-2.28.75.43:8338
+# Revised for v31.1.4 on 2026-09-13. Every entry below was checked that day to
+# follow the DigiShield chain -- it shares a header with us above block 431017 --
+# and to accept inbound connections on 8338; seven of the eight were also
+# confirmed at the chain tip directly on the node. Also removed: three nodes
+# running a /Satoshi:31.1.0/ build that stall at block 431016, one block below
+# the fork, and so cannot carry a new node past it.
+#
+# Before a release, re-check each entry against the fork, not against the tip.
+# getpeerinfo's synced_headers can sit below a peer's real tip for minutes after
+# a connect; what tells the chains apart is whether the common header lies above
+# block 431017. Regenerate src/chainparamsseeds.h from this file as described in
+# contrib/seeds/README.md.
 94.130.57.196:8338
 116.203.99.217:8338
 128.140.44.20:8338
-136.243.155.62:8338
-167.233.173.2:8338
 195.201.129.97:8338
+88.99.189.178:8338
+128.140.7.173:8338
+65.108.176.156:8338
+88.99.175.240:8338
