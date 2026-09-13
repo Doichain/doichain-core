@@ -19,8 +19,8 @@
 # dApp writes, this aborted nodes on ordinary mainnet traffic.
 #
 # Part two covers the operation's behaviour: registration, update, the
-# Doichain-specific one-step registration without a name input, and survival of
-# a chain reorganisation.  Those flows come from the parallel test written by
+# Doichain-specific one-step registration without a name input, re-registration
+# of an expired name by a third party, and survival of a chain reorganisation.  Those flows come from the parallel test written by
 # David Reband; they are adopted here rather than kept in a second file with the
 # same name.
 #
@@ -49,7 +49,9 @@ class NameDoiTest (NameTestFramework):
   def set_test_params (self):
     # -txindex mirrors the configuration the fleet runs, where getrawtransaction
     # is what the block explorer calls and where the abort was first observed.
-    self.setup_name_test ([["-txindex", "-namehistory"]] * 2)
+    # -allowexpired lets name_show report an expired name instead of raising;
+    # it is an RPC convenience and does not change what is valid.
+    self.setup_name_test ([["-txindex", "-namehistory", "-allowexpired"]] * 2)
 
   def generateToOther (self, n):
     """
@@ -67,6 +69,7 @@ class NameDoiTest (NameTestFramework):
     self.test_registration ()
     self.test_update ()
     self.test_registration_without_name_input ()
+    self.test_reregistration_after_expiry ()
 
     # Runs last: it disconnects the two nodes and rebuilds the chain.
     self.test_reorg ()
@@ -177,6 +180,63 @@ class NameDoiTest (NameTestFramework):
 
     self.generate (node, 1)
     assert_equal (node.name_show ("e/no-input")["value"], "fresh")
+
+  def test_reregistration_after_expiry (self):
+    """
+    An expired name is free again, and *anybody* may take it -- not just its
+    previous owner.  Both registration paths allow it; this covers the name_doi
+    one, which no test touched before: name_expiration.py and
+    name_allowexpired.py only exercise name_new / name_firstupdate.
+
+    This is deliberately a characterisation test.  Switching name expiry off is
+    under discussion (it is implemented on a branch but activated nowhere), and
+    it would change exactly this behaviour.  Pinning it down means that change
+    has to be made openly rather than slipping through.
+
+    Scale of the question on mainnet: 57 699 of 57 740 names are expired, so
+    almost every name ever registered is currently free for anyone to take.
+    """
+
+    self.log.info ("re-registering an expired name from another wallet")
+    node, other = self.nodes[0], self.nodes[1]
+    name = "e/expired-doi"
+
+    node.name_doi (name, "belongs to node 0")
+    self.generate (node, 1)
+    data = node.name_show (name)
+    assert_equal (data['value'], "belongs to node 0")
+    assert_equal (data['expired'], False)
+    assert_equal (data['ismine'], True)
+
+    # Mine past the expiration depth -- 30 blocks on regtest -- paying the
+    # second node, so its wallet can fund the takeover.  Coinbase outputs need
+    # 100 confirmations, hence the larger count.
+    self.generateToOther (110)
+
+    data = node.name_show (name)
+    assert_equal (data['expired'], True)
+    assert data['expires_in'] < 0
+
+    # The other wallet registers the same name in one step.  It must not spend
+    # a name input: to consensus the name counts as free again, and spending
+    # one would be rejected as tx-namedoi-freename-with-input.
+    txid = other.name_doi (name, "taken over by node 1")
+    assert txid in other.getrawmempool ()
+
+    raw = other.getrawtransaction (txid, True)
+    for vin in raw['vin']:
+      prev = other.getrawtransaction (vin['txid'], True)
+      assert 'nameOp' not in prev['vout'][vin['vout']]['scriptPubKey']
+
+    self.generate (other, 1)
+
+    data = other.name_show (name)
+    assert_equal (data['value'], "taken over by node 1")
+    assert_equal (data['expired'], False)
+    assert_equal (data['ismine'], True)
+
+    # And it really left the first wallet.
+    assert_equal (node.name_show (name)['ismine'], False)
 
   def test_reorg (self):
     """
