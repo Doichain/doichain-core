@@ -5,11 +5,10 @@
 
 # RPC test for the Doichain-specific name_doi operation (OP_NAME_DOI).
 #
-# The point of this test is that a transaction carrying a name_doi output can
-# be rendered as JSON.  OP_NAME_DOI was added to the script, consensus and
-# mempool code, but two switches that turn a name operation into RPC output
-# were never extended and fell through to their "default: assert (false)"
-# branch, aborting the node:
+# Part one covers the JSON rendering.  OP_NAME_DOI was added to the script,
+# consensus and mempool code, but two switches that turn a name operation into
+# RPC output were never extended and fell through to their
+# "default: assert (false)" branch, aborting the node:
 #
 #   Assertion failed: false (core_io.cpp: NameOpToUniv: 581)
 #
@@ -18,6 +17,24 @@
 # verbosity 2 -- and name_pending as well, whose input comes from the mempool
 # and therefore from the P2P network.  Since name_doi is what the Doichain
 # dApp writes, this aborted nodes on ordinary mainnet traffic.
+#
+# Part two covers the operation's behaviour: registration, update, the
+# Doichain-specific one-step registration without a name input, and survival of
+# a chain reorganisation.  Those flows come from the parallel test written by
+# David Reband; they are adopted here rather than kept in a second file with the
+# same name.
+#
+# Deliberately NOT adopted from that file, because they encode decisions taken
+# the other way (see the audit review):
+#
+#   * d/ names being refused for name_doi -- today they are accepted, and
+#     test/functional/name_doi_mempool.py pins that down.  The legacy guard
+#     never worked (it compared EncodeNameForMessage(), which quotes the name),
+#     so restoring it would introduce a rule, not restore one.
+#   * a chain of two pending DOI operations on an *unconfirmed* registration --
+#     that requires relaxing CheckNameTransaction, which is live consensus since
+#     DoiOwnershipHeight = 431017 and therefore needs its own activation height.
+#     name_doi_mempool.py pins down today's behaviour instead.
 
 from test_framework.names import NameTestFramework
 from test_framework.util import *
@@ -32,10 +49,35 @@ class NameDoiTest (NameTestFramework):
   def set_test_params (self):
     # -txindex mirrors the configuration the fleet runs, where getrawtransaction
     # is what the block explorer calls and where the abort was first observed.
-    self.setup_name_test ([["-txindex"]] * 2)
+    self.setup_name_test ([["-txindex", "-namehistory"]] * 2)
+
+  def generateToOther (self, n):
+    """
+    Generates n blocks paying to the second node, so the coins of the first one
+    stay predictable across sections.
+    """
+
+    addr = self.nodes[1].getnewaddress ()
+    self.generatetoaddress (self.nodes[0], n, addr)
 
   def run_test (self):
-    node = self.nodes[0]
+    self.node = self.nodes[0]
+
+    self.test_json_rendering ()
+    self.test_registration ()
+    self.test_update ()
+    self.test_registration_without_name_input ()
+
+    # Runs last: it disconnects the two nodes and rebuilds the chain.
+    self.test_reorg ()
+
+  def test_json_rendering (self):
+    """
+    Every RPC path that turns a name_doi output into JSON has to render it
+    instead of aborting the node.
+    """
+
+    node = self.node
 
     # Register the name in a single step.  While the transaction sits in the
     # mempool, name_pending has to report it instead of aborting the node.
@@ -59,6 +101,14 @@ class NameDoiTest (NameTestFramework):
     assert_equal (ops[0]['name'], NAME)
     assert_equal (ops[0]['value'], VALUE)
 
+    # The asm rendering has to show the name and value as hex like the other
+    # name operations, not as a decimal number.  Without OP_NAME_DOI in the
+    # ScriptToAsmStr condition a short name comes out as an integer.
+    asm = [out['scriptPubKey']['asm'] for tx in block['tx']
+             for out in tx['vout'] if 'nameOp' in out['scriptPubKey']]
+    assert_equal (len (asm), 1)
+    assert "OP_NAME_DOI" in asm[0]
+
     # Updating an existing name spends its previous name_doi output; the
     # update has to decode just as well as the registration.
     txid = node.name_doi (NAME, NEW_VALUE)
@@ -70,6 +120,94 @@ class NameDoiTest (NameTestFramework):
     data = node.name_show (NAME)
     assert_equal (data['name'], NAME)
     assert_equal (data['value'], NEW_VALUE)
+
+  def test_registration (self):
+    """A name_doi on an unused name registers it in a single step."""
+
+    self.log.info ("registering a DOI")
+    node = self.node
+
+    txid = node.name_doi ("e/first", "value one")
+    assert txid in node.getrawmempool ()
+
+    pending = [p for p in node.name_pending () if p["name"] == "e/first"]
+    assert_equal (len (pending), 1)
+    assert_equal (pending[0]["op"], "name_doi")
+
+    self.generate (node, 1)
+    data = node.name_show ("e/first")
+    assert_equal (data["name"], "e/first")
+    assert_equal (data["value"], "value one")
+    assert_equal (data["expired"], False)
+
+    names = [n["name"] for n in node.name_list ()]
+    assert "e/first" in names
+
+  def test_update (self):
+    """A name_doi spending the previous DOI output updates the name."""
+
+    self.log.info ("updating a DOI")
+    node = self.node
+
+    node.name_doi ("e/first", "value two")
+    self.generate (node, 1)
+    assert_equal (node.name_show ("e/first")["value"], "value two")
+
+  def test_registration_without_name_input (self):
+    """
+    A DOI may be registered without spending a name input.  This is where
+    Doichain diverges from Namecoin: mainnet block 29966 carries three such
+    registrations, which is why the historic rule below DoiOwnershipHeight has
+    to keep accepting them.
+    """
+
+    self.log.info ("registering a DOI without a name input")
+    node = self.node
+
+    txid = node.name_doi ("e/no-input", "fresh")
+    raw = node.getrawtransaction (txid, True)
+
+    nameIns = 0
+    for vin in raw["vin"]:
+      prev = node.getrawtransaction (vin["txid"], True)
+      spent = prev["vout"][vin["vout"]]["scriptPubKey"]
+      if "nameOp" in spent:
+        nameIns += 1
+    assert_equal (nameIns, 0)
+
+    self.generate (node, 1)
+    assert_equal (node.name_show ("e/no-input")["value"], "fresh")
+
+  def test_reorg (self):
+    """
+    A DOI registration has to survive being reorganised out and back in, and
+    the name database has to stay consistent across it.
+    """
+
+    self.log.info ("reorganising a block with a name_doi")
+    node = self.node
+    other = self.nodes[1]
+
+    self.disconnect_nodes (0, 1)
+    addrOther = other.getnewaddress ()
+
+    node.name_doi ("e/reorged", "before")
+    self.generatetoaddress (node, 1, addrOther, sync_fun=self.no_op)
+    assert_equal (node.name_show ("e/reorged")["value"], "before")
+
+    # The other node builds a longer chain without our transaction.
+    self.generatetoaddress (other, 3, addrOther, sync_fun=self.no_op)
+
+    self.connect_nodes (0, 1)
+    self.sync_blocks ()
+
+    # The name is gone from the chain but back in node 0's mempool, so mining
+    # on node 0 brings it back.
+    assert_raises_rpc_error (-4, "name never existed",
+                             node.name_show, "e/reorged")
+    self.generatetoaddress (node, 1, addrOther, sync_fun=self.no_op)
+    self.sync_blocks ()
+    assert_equal (node.name_show ("e/reorged")["value"], "before")
 
   def checkPendingDoi (self, node, txid, value):
     """
