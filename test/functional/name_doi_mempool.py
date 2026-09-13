@@ -60,6 +60,7 @@ class NameDoiMempoolTest (NameTestFramework):
     self.generate (self.node, 200)
 
     self.test_chain_on_confirmed_name ()
+    self.test_d_namespace_is_not_reserved ()
 
     # Runs last on purpose: it leaves a rejected transaction behind in the
     # wallet, which becomes valid once its parent confirms -- the name then
@@ -148,6 +149,41 @@ class NameDoiMempoolTest (NameTestFramework):
 
     self.generate (node, 1)
     self.checkName (0, name, "one", None, False)
+
+
+  def test_d_namespace_is_not_reserved (self):
+    """
+    Characterisation: a name_doi on a d/ name is accepted today.
+
+    The legacy 0.20 tree refused it, in CNameMemPool::checkTx:
+
+        case OP_NAME_DOI:
+          if (EncodeNameForMessage (name).rfind ("d/", 0) == 0)
+            return false;
+
+    That was mempool *policy*, not consensus -- such a transaction was never
+    invalid, it was merely not accepted or relayed by that node, and a miner
+    could include it in a block regardless.  The nc31 fork groups OP_NAME_DOI
+    with OP_NAME_UPDATE in checkTx, so the guard is gone and the d/ namespace
+    carries no special meaning anywhere in validation.
+
+    Whether to restore the separation is a policy decision, not a security one.
+    This test records today's behaviour so that changing it is visible rather
+    than silent.
+    """
+
+    node = self.node
+    name = "d/audit"
+
+    txid = node.name_doi (name, "value")
+    assert_equal (node.getrawmempool (), [txid])
+    self.generate (node, 1)
+    self.checkName (0, name, "value", None, False)
+
+    # Not covered here: how a classic name_update interacts with a name held by
+    # a NAME_DOI output.  isAnyUpdate() is true for OP_NAME_DOI, so that may
+    # well be allowed; it is a separate question from the namespace one and is
+    # left untested rather than asserted from reading.
 
 
 if __name__ == '__main__':
