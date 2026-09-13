@@ -36,7 +36,7 @@ std::string GetOpName(opcodetype opcode)
     case OP_7                      : return "7";
     case OP_8                      : return "8";
     case OP_9                      : return "9";
-    case OP_10                     : return "10";
+    case OP_10                     : return "OP_NAME_DOI";
     case OP_11                     : return "11";
     case OP_12                     : return "12";
     case OP_13                     : return "13";

@@ -436,7 +436,17 @@ bool CCoinsViewDB::ValidateNameDB(const Chainstate& chainState, const std::funct
                 if (nameOp.isNameOp() && nameOp.isAnyUpdate())
                 {
                     const valtype& name = nameOp.getOpName();
-                    if (namesInUTXO.count(name) > 0) {
+                    /* Doichain: several unspent outputs for one name are
+                       legitimate for NAME_DOI.  Below DoiOwnershipHeight an
+                       existing name could be overwritten by a fresh
+                       registration that spends no name input, which leaves the
+                       previous name output in the UTXO set for good.  The
+                       pre-fork chain contains such names, so this is history
+                       rather than corruption.  The invariant still holds for
+                       the classic operations, where exactly one live output
+                       per name is expected.  */
+                    if (namesInUTXO.count(name) > 0
+                          && nameOp.getNameOp() != OP_NAME_DOI) {
                         LogError ("%s : name %s duplicated in UTXO set",
                                   __func__, EncodeNameForMessage(name));
                         return false;

@@ -375,7 +375,8 @@ std::string ScriptToAsmStr(const CScript& script, const bool fAttemptSighashDeco
             if (vch.size() <= static_cast<std::vector<unsigned char>::size_type>(4)) {
                 if ((lastOpcode == OP_NAME_NEW
                       || lastOpcode == OP_NAME_UPDATE
-                      || lastOpcode == OP_NAME_FIRSTUPDATE)
+                      || lastOpcode == OP_NAME_FIRSTUPDATE
+                      || lastOpcode == OP_NAME_DOI)
                     && !vch.empty()) {
                       str += HexStr(vch);
                 } else {
@@ -571,6 +572,14 @@ UniValue NameOpToUniv (const CNameScript& nameOp)
 
       case OP_NAME_UPDATE:
         result.pushKV ("op", "name_update");
+        AddEncodedNameToUniv (result, "name", nameOp.getOpName (),
+                              ConfiguredNameEncoding ());
+        AddEncodedNameToUniv (result, "value", nameOp.getOpValue (),
+                              ConfiguredValueEncoding ());
+        break;
+
+      case OP_NAME_DOI:
+        result.pushKV ("op", "name_doi");
         AddEncodedNameToUniv (result, "name", nameOp.getOpName (),
                               ConfiguredNameEncoding ());
         AddEncodedNameToUniv (result, "value", nameOp.getOpValue (),
