@@ -1,6 +1,9 @@
 Doichain Core integration/staging tree
 =======================================
 
+> [!IMPORTANT]
+> **Security fork at block 431017 (11 September 2026).** Doichain activated a security fork to restart the stalled chain and to close a serious security hole: the old software never checked a block's difficulty (`nBits`). All node operators, pools and exchanges should run [v31.1.5](https://github.com/Doichain/doichain-core/releases/tag/v31.1.5). Check your node: `doichain-cli getblockhash 431018` must return `71d50ff1…`. Details and instructions: [#16](https://github.com/Doichain/doichain-core/issues/16).
+
 [![Lean CI](https://github.com/Doichain/doichain-core/actions/workflows/ci-lean.yml/badge.svg?branch=master)](https://github.com/Doichain/doichain-core/actions/workflows/ci-lean.yml)
 
 https://doichain.org
