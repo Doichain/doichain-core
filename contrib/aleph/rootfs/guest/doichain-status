@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# doichain-status            -> compact chain status
+# doichain-status <rpc args> -> any doichain-cli call against the local node
+set -euo pipefail
+CLI="/usr/local/bin/doichain-cli -regtest -datadir=/var/lib/doichain -rpcport=18443"
+if [ $# -gt 0 ]; then exec $CLI "$@"; fi
+info=$($CLI getblockchaininfo)
+h=$(echo "$info" | jq -r .blocks); best=$(echo "$info" | jq -r .bestblockhash)
+bits=$($CLI getblockheader "$best" | jq -r .bits)
+t=$($CLI getblockheader "$best" | jq -r .time)
+peers=$($CLI getconnectioncount)
+echo "height=$h bits=$bits difficulty=$(echo "$info" | jq -r .difficulty) peers=$peers tip_age=$(( $(date +%s) - t ))s"

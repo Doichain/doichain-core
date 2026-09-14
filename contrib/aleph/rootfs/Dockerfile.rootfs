@@ -1,0 +1,16 @@
+# libguestfs builder for the Aleph rootfs (same recipe as the relay profiles,
+# minus Go).  Runs --privileged; on macOS the appliance falls back to TCG.
+FROM --platform=linux/amd64 debian:12
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LIBGUESTFS_BACKEND=direct
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates curl \
+    libguestfs-tools linux-image-amd64 \
+    qemu-system-x86 qemu-utils \
+    python3 \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
