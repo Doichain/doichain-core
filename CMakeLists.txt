@@ -64,7 +64,7 @@ endif()
 
 set(COPYRIGHT_HOLDERS "The %s developers")
 set(COPYRIGHT_HOLDERS_FINAL "The ${CLIENT_NAME} developers")
-set(CLIENT_BUGREPORT "https://github.com/Le-Space/doichain-core/issues")
+set(CLIENT_BUGREPORT "https://github.com/Doichain/doichain-core/issues")
 
 #=============================
 # Language setup
