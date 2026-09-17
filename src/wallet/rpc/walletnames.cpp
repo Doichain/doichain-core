@@ -852,7 +852,7 @@ name_doi ()
       .withWriteOptions ();
 
   return RPCHelpMan ("name_doi",
-      "\nRegisters or updates a name using the Doichain name_doi operation."
+      "Registers or updates a name using the Doichain name_doi operation."
       "  If the name does not yet exist (or has expired) it is registered in a"
       " single step; if it already exists, its previous name_doi output is spent,"
       " so that only the current owner can change it."

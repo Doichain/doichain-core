@@ -76,6 +76,11 @@ jobs:
           # plus the DigiShield DAA end-to-end test (reset window, bounded valve,
           # relay and low-work headers sync across three nodes)
           NAMES="feature_digishield.py $NAMES"
+          # plus rpc_help.py, which renders every RPC's help text. Our own RPCs
+          # are the ones likely to break it, and nothing else in this suite
+          # calls plain `help`: a name_doi description starting with a newline
+          # broke `help` in v31.1.2 through v31.1.5 without CI noticing (#18).
+          NAMES="rpc_help.py $NAMES"
           python3 build/test/functional/test_runner.py $NAMES -j"$(nproc)" \
             --tmpdirprefix="${RUNNER_TEMP}/dc-func"
 
