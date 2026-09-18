@@ -59,12 +59,6 @@ class BumpFeeTest(BitcoinTestFramework):
             "-walletrbf={}".format(i),
             "-mintxfee=0.00002",
             "-addresstype=bech32",
-            # Namecoin raises the -consolidatefeerate default to 1000 sat/vB
-            # (Bitcoin: 10).  Every transaction this test builds pays less, so
-            # coin selection counts each extra input as a saving and spends the
-            # 0.001 coins that spend_one_input() needs on other transactions
-            # until none are left.  Use Bitcoin's default instead.
-            "-consolidatefeerate=0.0001",
         ] for i in range(self.num_nodes)]
 
     def skip_test_if_missing_module(self):

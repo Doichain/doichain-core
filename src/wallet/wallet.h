@@ -111,7 +111,7 @@ static const CAmount DEFAULT_DISCARD_FEE = 10000;
 //! -mintxfee default
 static const CAmount DEFAULT_TRANSACTION_MINFEE = COIN / 1000;
 //! -consolidatefeerate default
-static const CAmount DEFAULT_CONSOLIDATE_FEERATE{COIN / 100}; // 10 sat/vbyte
+static const CAmount DEFAULT_CONSOLIDATE_FEERATE{COIN / 100}; // 1000 sat/vbyte (Bitcoin: 10)
 /**
  * maximum fee increase allowed to do partial spend avoidance, even for nodes with this feature disabled by default
  *
